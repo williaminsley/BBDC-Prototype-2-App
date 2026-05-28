@@ -311,8 +311,14 @@ function attachPrivacySafeInputLogging(root = document) {
 }
 
 function pointerPayload(e, el = null) {
+  const componentEl = el?.closest?.("[data-component-id]") || el;
+
   return {
-    componentId: el?.dataset?.componentId || el?.dataset?.item || el?.id || null,
+    componentId:
+      componentEl?.dataset?.componentId ||
+      componentEl?.dataset?.item ||
+      componentEl?.id ||
+      null,
     x: Number.isFinite(e.clientX) ? Math.round(e.clientX) : null,
     y: Number.isFinite(e.clientY) ? Math.round(e.clientY) : null,
     xNorm: window.innerWidth ? Number((e.clientX / window.innerWidth).toFixed(5)) : null,
