@@ -1,5 +1,5 @@
 const GUIDED_TASKS = [
-  { id: "unlock_code", area: "secure", type: "code", title: "Unlock Pulse", expectedSeconds: 12 },
+  { id: "unlock_code", area: "secure", type: "code", title: "Unlock bank app", expectedSeconds: 12 },
   { id: "home_balance_check", area: "home", type: "tap_account", title: "Check your balance", expectedSeconds: 14 },
   { id: "activity_search", area: "activity", type: "typing_search", title: "Search payment history", expectedSeconds: 22 },
   { id: "activity_scroll_select", area: "activity", type: "transaction_feed", title: "Find the payment", expectedSeconds: 28 },
