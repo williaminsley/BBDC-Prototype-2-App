@@ -5,7 +5,8 @@ const appState = {
   selectedContext: {},
   content: {},
   evidenceByTask: {},
-  motionStarted: false
+  motionStarted: false,
+  identity: null
 };
 
 window.currentTask = null;
@@ -39,6 +40,8 @@ function renderWelcome() {
 function renderContext() {
   window.currentScreenId = "context";
 
+  appState.identity = ensureIdentity();
+
   app.innerHTML = `
     <section class="screen">
       <div class="topbar">
@@ -50,8 +53,11 @@ function renderContext() {
         <h2>Before you start</h2>
         <p class="muted">Add quick context for this session.</p>
 
-        <label for="participantId">Participant ID</label>
-        <input id="participantId" data-component-id="participant_id" placeholder="e.g. P001" autocomplete="off" />
+        <div class="mini-card">
+          <p class="muted">Participant ID</p>
+          <h3>${escapeHtml(appState.identity.participantId)}</h3>
+          <p class="hint">This browser/device keeps the same anonymous ID for repeated sessions.</p>
+        </div>
 
         <label for="posture">Posture</label>
         <select id="posture">
@@ -109,8 +115,9 @@ function renderContext() {
 }
 
 async function startSession() {
+  appState.identity = ensureIdentity();
+
   appState.selectedContext = {
-    participantId: document.getElementById("participantId").value.trim() || "unknown",
     posture: document.getElementById("posture").value,
     handUse: document.getElementById("handUse").value,
     dominantHand: document.getElementById("dominantHand").value,
@@ -130,7 +137,8 @@ async function startSession() {
   appState.motionStarted = true;
 
   logEvent("motion_logging_started", {
-    permissionResult: motionPermission
+    permissionResult: motionPermission,
+    participantId: appState.identity.participantId
   });
 
   goToTask(0);
@@ -226,11 +234,11 @@ function renderTaskBody(task) {
 
     case "swipe_intro":
       return `
-        <div class="swipe-instruction">Swipe across at least two cards.</div>
+        <div class="swipe-instruction">Swipe or click at least two cards.</div>
         <div class="swipe-stack">
-          <div class="swipe-card" data-component-id="intro_card_activity">Today’s activity</div>
-          <div class="swipe-card" data-component-id="intro_card_messages">Messages waiting</div>
-          <div class="swipe-card" data-component-id="intro_card_priorities">Priorities to organise</div>
+          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_activity">Today’s activity</button>
+          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_messages">Messages waiting</button>
+          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_priorities">Priorities to organise</button>
         </div>
       `;
 
@@ -238,14 +246,14 @@ function renderTaskBody(task) {
       return `
         <div class="mini-card">
           <p>Search for:</p>
-          <h3>${appState.content.searchTerm}</h3>
+          <h3>${escapeHtml(appState.content.searchTerm)}</h3>
         </div>
         <input class="large-input" data-component-id="search_input" placeholder="Search activity..." autocomplete="off" autocapitalize="none" spellcheck="false" />
       `;
 
     case "scroll_find":
       return `
-        <p class="hint">Find and tap: <strong>${appState.content.targetMerchant}</strong></p>
+        <p class="hint">Find and tap: <strong>${escapeHtml(appState.content.targetMerchant)}</strong></p>
         <div class="feed-list" data-log-scroll="true" data-component-id="activity_feed">
           ${appState.content.feedItems
             .map(
@@ -288,9 +296,9 @@ function renderTaskBody(task) {
           ${appState.content.priorities
             .map(
               (p) => `
-            <div class="priority-card" data-draggable-card="true" data-item="${escapeAttr(p)}" data-component-id="priority_${slugify(p)}">
+            <button class="priority-card" data-draggable-card="true" data-priority-card="true" data-item="${escapeAttr(p)}" data-component-id="priority_${slugify(p)}">
               ${escapeHtml(p)}
-            </div>
+            </button>
           `
             )
             .join("")}
@@ -299,12 +307,12 @@ function renderTaskBody(task) {
 
     case "swipe_decisions":
       return `
-        <div class="swipe-instruction">Swipe cards, or use the decision buttons.</div>
+        <div class="swipe-instruction">Swipe cards, or use Dismiss / Keep twice.</div>
         <div class="swipe-stack">
           ${appState.content.suggestions
             .map(
               (s) => `
-            <div class="swipe-card" data-component-id="decision_card_${slugify(s)}">${escapeHtml(s)}</div>
+            <button class="swipe-card" data-review-decision-card="true" data-component-id="decision_card_${slugify(s)}">${escapeHtml(s)}</button>
           `
             )
             .join("")}
@@ -348,28 +356,41 @@ function attachTaskSpecificHandlers(task) {
     case "hold":
       attachHoldHandlers();
       break;
+
+    case "swipe_intro":
+      attachReviewCardHandlers(task);
+      attachSwipeEvidenceMonitor(task);
+      break;
+
     case "typing_search":
     case "typing_note":
     case "typing_reply":
       attachTypingEvidenceHandlers(task);
       break;
+
     case "scroll_find":
       attachFeedHandlers();
       break;
+
     case "categorise":
       attachCategoryHandlers();
       break;
+
     case "drag_reorder":
       attachDragEvidenceMonitor();
+      attachPrioritySelectionHandlers();
       break;
-    case "swipe_intro":
+
     case "swipe_decisions":
       attachSwipeEvidenceMonitor(task);
+      attachDecisionCardClickHandlers();
       attachDecisionHandlers();
       break;
+
     case "final_checkin":
       attachFinalCheckinHandlers();
       break;
+
     default:
       break;
   }
@@ -383,6 +404,7 @@ function attachHoldHandlers() {
 
   el.addEventListener("pointerdown", () => {
     start = performance.now();
+
     logEvent("hold_start", {
       componentId: "hold_button"
     });
@@ -399,6 +421,60 @@ function attachHoldHandlers() {
     logEvent("hold_end", {
       componentId: "hold_button",
       durationMs
+    });
+  });
+}
+
+function attachReviewCardHandlers(task) {
+  const taskId = task.id;
+  let cardsReviewed = getTaskEvidence(taskId).cardsReviewed || 0;
+  const reviewed = new Set();
+
+  document.querySelectorAll("[data-review-card='true']").forEach((card) => {
+    card.addEventListener("click", () => {
+      const id = card.dataset.componentId;
+
+      if (!reviewed.has(id)) {
+        reviewed.add(id);
+        cardsReviewed += 1;
+        card.classList.add("selected-card");
+      }
+
+      updateTaskEvidence(taskId, {
+        cardsReviewed
+      });
+
+      logEvent("review_card_selected", {
+        componentId: id,
+        cardsReviewed
+      });
+    });
+  });
+}
+
+function attachDecisionCardClickHandlers() {
+  const taskId = "swipe_decisions";
+  let decisionCardClicks = getTaskEvidence(taskId).decisionCardClicks || 0;
+  const clicked = new Set();
+
+  document.querySelectorAll("[data-review-decision-card='true']").forEach((card) => {
+    card.addEventListener("click", () => {
+      const id = card.dataset.componentId;
+
+      if (!clicked.has(id)) {
+        clicked.add(id);
+        decisionCardClicks += 1;
+        card.classList.add("selected-card");
+      }
+
+      updateTaskEvidence(taskId, {
+        decisionCardClicks
+      });
+
+      logEvent("decision_card_selected", {
+        componentId: id,
+        decisionCardClicks
+      });
     });
   });
 }
@@ -439,6 +515,12 @@ function attachCategoryHandlers() {
     button.addEventListener("click", () => {
       const category = button.dataset.category;
 
+      document.querySelectorAll("[data-category]").forEach((x) => {
+        x.classList.remove("selected-card");
+      });
+
+      button.classList.add("selected-card");
+
       updateTaskEvidence("categorise_item", {
         categorySelected: true,
         category
@@ -447,6 +529,30 @@ function attachCategoryHandlers() {
       logEvent("category_selected", {
         componentId: button.dataset.componentId,
         category
+      });
+    });
+  });
+}
+
+function attachPrioritySelectionHandlers() {
+  document.querySelectorAll("[data-priority-card='true']").forEach((card) => {
+    card.addEventListener("click", () => {
+      const item = card.dataset.item;
+
+      document.querySelectorAll("[data-priority-card='true']").forEach((x) => {
+        x.classList.remove("selected-card");
+      });
+
+      card.classList.add("selected-card");
+
+      updateTaskEvidence("reorder_priorities", {
+        prioritySelected: true,
+        selectedPriority: item
+      });
+
+      logEvent("priority_selected", {
+        componentId: card.dataset.componentId,
+        selectedPriority: item
       });
     });
   });
@@ -474,6 +580,12 @@ function attachFinalCheckinHandlers() {
   document.querySelectorAll("[data-feeling]").forEach((button) => {
     button.addEventListener("click", () => {
       const feeling = button.dataset.feeling;
+
+      document.querySelectorAll("[data-feeling]").forEach((x) => {
+        x.classList.remove("selected-card");
+      });
+
+      button.classList.add("selected-card");
 
       updateTaskEvidence("final_checkin", {
         finalFeeling: true,
@@ -515,8 +627,8 @@ function attachDragEvidenceMonitor() {
 
 function attachSwipeEvidenceMonitor(task) {
   const taskId = task.id;
-  let swipeStarts = 0;
-  let swipeSummaries = 0;
+  let swipeStarts = getTaskEvidence(taskId).swipeStarts || 0;
+  let swipeSummaries = getTaskEvidence(taskId).swipeSummaries || 0;
 
   document.querySelectorAll(".swipe-card").forEach((card) => {
     let startX = null;
@@ -538,7 +650,9 @@ function attachSwipeEvidenceMonitor(task) {
 
       const distance = Math.hypot(e.clientX - startX, e.clientY - startY);
 
-      if (distance >= 30) swipeSummaries += 1;
+      if (distance >= 30) {
+        swipeSummaries += 1;
+      }
 
       updateTaskEvidence(taskId, {
         swipeStarts,
@@ -573,39 +687,50 @@ function validateTaskEvidence(task) {
   switch (task.id) {
     case "hold_to_start":
       return evidence.holdEnds ? null : "Press and hold the start card first.";
+
     case "swipe_intro":
-      return (evidence.swipeSummaries || 0) >= 2
+      return (evidence.cardsReviewed || 0) >= 2 || (evidence.swipeSummaries || 0) >= 2
         ? null
-        : "Swipe across at least two cards.";
+        : "Swipe or click at least two cards.";
+
     case "search_activity":
       return (evidence.inputLength || 0) >= 2
         ? null
         : "Type the search term before continuing.";
+
     case "scroll_find":
       return evidence.selectedTarget
         ? null
         : `Tap the ${appState.content.targetMerchant} item first.`;
+
     case "categorise_item":
       return evidence.categorySelected ? null : "Choose a category first.";
+
     case "add_note":
       return (evidence.inputLength || 0) >= 4
         ? null
         : "Add a short note first.";
+
     case "reorder_priorities":
-      return (evidence.dragEnds || 0) >= 1
+      return evidence.prioritySelected || (evidence.dragEnds || 0) >= 1
         ? null
-        : "Drag at least one priority card first.";
+        : "Drag or click your top priority first.";
+
     case "swipe_decisions":
       return (evidence.swipeSummaries || 0) >= 2 ||
-        (evidence.decisionActions || 0) >= 2
+        (evidence.decisionActions || 0) >= 2 ||
+        (evidence.decisionCardClicks || 0) >= 2
         ? null
-        : "Swipe or choose at least two decisions.";
+        : "Swipe two cards, click two cards, or use the decision buttons twice.";
+
     case "reply_message":
       return (evidence.inputLength || 0) >= 6
         ? null
         : "Type a short reply first.";
+
     case "final_checkin":
       return evidence.finalFeeling ? null : "Choose how the session felt first.";
+
     default:
       return null;
   }
@@ -630,11 +755,20 @@ function clearTaskWarning() {
 function renderComplete() {
   window.currentScreenId = "complete";
 
+  const s = getSession();
+
   app.innerHTML = `
     <section class="screen">
       <div class="hero-card">
         <p class="eyebrow">Complete</p>
         <h1>Session finished</h1>
+
+        <div class="mini-card">
+          <p class="muted">Participant</p>
+          <h3>${escapeHtml(s?.participantId || appState.identity?.participantId || "unknown")}</h3>
+          <p class="hint">Session ${escapeHtml(String(s?.sessionIndex || ""))}</p>
+        </div>
+
         <p class="muted">
           Download the session JSON and inspect it before Firebase upload is added.
         </p>
@@ -677,7 +811,6 @@ function randomAmount() {
 function shuffleArray(arr) {
   for (let i = arr.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 

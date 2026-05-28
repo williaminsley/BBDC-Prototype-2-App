@@ -143,7 +143,9 @@ h2 {
 .secondary-btn,
 .chip,
 .feed-item,
-.hold-card {
+.hold-card,
+.swipe-card,
+.priority-card {
   border: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -240,6 +242,9 @@ textarea {
   align-items: center;
   font-weight: 800;
   touch-action: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
 }
 
 .feed-list,
@@ -284,12 +289,21 @@ textarea {
   font-weight: 800;
   touch-action: none;
   user-select: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
 }
 
 .priority-card:active,
 .swipe-card:active,
 .hold-card:active {
   transform: scale(0.985);
+}
+
+.selected-card {
+  border-color: rgba(34, 197, 94, 0.75);
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18);
 }
 
 .task-warning {

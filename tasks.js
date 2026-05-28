@@ -9,11 +9,11 @@ const TASKS = [
   },
   {
     id: "swipe_intro",
-    title: "Swipe through your review",
-    subtitle: "Swipe across the cards to preview today’s activity.",
+    title: "Review intro cards",
+    subtitle: "Swipe or click at least two cards to preview today’s activity.",
     type: "swipe_intro",
     targetTimeSec: 20,
-    minEvidence: { swipeSummaries: 2 }
+    minEvidence: { cardsReviewed: 2 }
   },
   {
     id: "search_activity",
@@ -49,19 +49,19 @@ const TASKS = [
   },
   {
     id: "reorder_priorities",
-    title: "Reorder priorities",
-    subtitle: "Drag the most important card to the top.",
+    title: "Choose top priority",
+    subtitle: "Drag a card or click the priority that matters most today.",
     type: "drag_reorder",
     targetTimeSec: 25,
-    minEvidence: { dragEnds: 1 }
+    minEvidence: { prioritySelected: true }
   },
   {
     id: "swipe_decisions",
     title: "Review suggestions",
-    subtitle: "Swipe cards left or right to decide.",
+    subtitle: "Swipe cards left or right, or use the decision buttons.",
     type: "swipe_decisions",
     targetTimeSec: 25,
-    minEvidence: { swipeSummaries: 2 }
+    minEvidence: { decisions: 2 }
   },
   {
     id: "reply_message",

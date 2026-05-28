@@ -1,9 +1,12 @@
 let session = null;
 let listenersAttached = false;
+let motionListenersAttached = false;
+
 let lastPointerMoveLog = 0;
 let lastWindowScrollLog = 0;
 let lastMotionLog = 0;
 let lastOrientationLog = 0;
+
 let activeSwipe = null;
 let activeDrags = new Map();
 
@@ -11,43 +14,123 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function nowMs() {
+  return performance.now();
+}
+
 function tRelMs() {
   if (!session) return 0;
   return Math.round(performance.now() - session.startedAtPerf);
 }
 
+// ==========================
+// Prototype 1-style identity
+// ==========================
+
+function makeId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID().replace(/-/g, "");
+  }
+
+  const cryptoObj = globalThis.crypto || globalThis.msCrypto;
+
+  if (cryptoObj?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    cryptoObj.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  return (Date.now().toString(16) + Math.random().toString(16).slice(2)).replace(".", "");
+}
+
+function makeParticipantId() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "p";
+
+  for (let i = 0; i < 6; i += 1) {
+    s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+
+  return s;
+}
+
+function ensureIdentity() {
+  let participantId = localStorage.getItem("participantId");
+
+  if (!participantId) {
+    participantId = makeParticipantId();
+    localStorage.setItem("participantId", participantId);
+  }
+
+  return {
+    uid: null,
+    participantId
+  };
+}
+
+function getNextSessionIndex() {
+  const count = Number(localStorage.getItem("sessionCount") || 0) + 1;
+  localStorage.setItem("sessionCount", String(count));
+  return count;
+}
+
+// ==========================
+// Session setup
+// ==========================
+
 function createSession(context = {}, generatedContent = {}) {
-  const sessionId = `p2_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const identity = ensureIdentity();
+  const sessionIndex = getNextSessionIndex();
 
   session = {
     schemaName: SCHEMA_NAME,
     schemaVersion: SCHEMA_VERSION,
     appVersion: APP_VERSION,
-    sessionId,
+
+    sessionId: makeId(),
+    sessionIndex,
+    participantId: identity.participantId,
+    displayName: localStorage.getItem("displayName") || "",
+
+    createdAtClientISO: nowIso(),
     startedAtIso: nowIso(),
     completedAtIso: null,
     startedAtPerf: performance.now(),
     sessionDurationMs: null,
     completedNormally: false,
-    context,
+
+    context: {
+      ...context,
+      participantId: identity.participantId
+    },
+
     generatedContent,
     config: SESSION_CONFIG,
+
     privacyFlags: {
       storesRawText: false,
       storesGeolocation: false,
       typedTextRedacted: true
     },
+
     device: getDeviceSummary(),
     capabilities: getCapabilitySummary(),
+
     permissions: {
       motion: "not_requested",
       geolocation: "not_collected_privacy"
     },
+
     events: [],
     taskSummary: []
   };
 
   logEvent("session_start", {
+    participantId: identity.participantId,
+    sessionIndex,
     storesRawText: false,
     storesGeolocation: false
   });
@@ -68,16 +151,27 @@ function getDeviceSummary() {
     vendor: navigator.vendor || null,
     language: navigator.language,
     maxTouchPoints: navigator.maxTouchPoints || 0,
+
     pointerEventSupported: "PointerEvent" in window,
     touchEventSupported: "TouchEvent" in window,
     visualViewportSupported: "visualViewport" in window,
     deviceMotionSupported: "DeviceMotionEvent" in window,
     deviceOrientationSupported: "DeviceOrientationEvent" in window,
+
     innerWidth: window.innerWidth,
     innerHeight: window.innerHeight,
-    screenWidth: window.screen.width,
-    screenHeight: window.screen.height,
+
+    screen: {
+      w: screen.width,
+      h: screen.height,
+      dpr: window.devicePixelRatio || 1
+    },
+
+    screenWidth: screen.width,
+    screenHeight: screen.height,
     devicePixelRatio: window.devicePixelRatio || 1,
+
+    timezoneOffsetMin: new Date().getTimezoneOffset(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };
 }
@@ -112,6 +206,10 @@ function storageAvailable(type) {
   }
 }
 
+// ==========================
+// Event logger
+// ==========================
+
 function sanitisePayload(payload = {}) {
   const blockedKeys = [
     "value",
@@ -140,8 +238,11 @@ function logEvent(kind, payload = {}) {
 
   session.events.push({
     kind,
+    t: kind,
     tRelMs: tRelMs(),
+    ms: tRelMs(),
     timestampIso: nowIso(),
+    tISO: nowIso(),
     taskId: window.currentTask?.id || null,
     taskIndex: window.currentTaskIndex ?? null,
     screenId: window.currentScreenId || null,
@@ -186,6 +287,10 @@ function classifyKey(key) {
   if (/^[.,!?;:'"-]$/.test(key)) return "PUNCT";
   return "OTHER";
 }
+
+// ==========================
+// Input logging
+// ==========================
 
 function attachPrivacySafeInputLogging(root = document) {
   root.querySelectorAll("input, textarea").forEach((el) => {
@@ -247,6 +352,10 @@ function attachPrivacySafeInputLogging(root = document) {
   });
 }
 
+// ==========================
+// Pointer / swipe / drag logging
+// ==========================
+
 function pointerPayload(e, el = null) {
   return {
     componentId: el?.dataset?.componentId || el?.dataset?.item || el?.id || null,
@@ -265,6 +374,7 @@ function attachPointerLogging() {
     "pointerdown",
     (e) => {
       logEvent("pointerdown", pointerPayload(e, e.target));
+      logEvent("pointer_down", pointerPayload(e, e.target));
 
       activeSwipe = {
         pointerId: e.pointerId,
@@ -308,7 +418,9 @@ function attachPointerLogging() {
       if (now - lastPointerMoveLog < 16) return;
 
       lastPointerMoveLog = now;
+
       logEvent("pointermove", pointerPayload(e, e.target));
+      logEvent("pointer_move", pointerPayload(e, e.target));
     },
     { passive: true }
   );
@@ -317,6 +429,7 @@ function attachPointerLogging() {
     "pointerup",
     (e) => {
       logEvent("pointerup", pointerPayload(e, e.target));
+      logEvent("pointer_up", pointerPayload(e, e.target));
       finishSwipeIfActive(e, "pointerup");
     },
     { passive: true }
@@ -501,6 +614,10 @@ function attachGlobalListeners() {
   attachPointerLogging();
 }
 
+// ==========================
+// Motion / orientation
+// ==========================
+
 async function requestMotionPermission() {
   if (!session) return "no_session";
 
@@ -539,7 +656,9 @@ async function requestMotionPermission() {
 }
 
 function startMotionLogging() {
-  if (!session) return;
+  if (!session || motionListenersAttached) return;
+
+  motionListenersAttached = true;
 
   window.addEventListener(
     "devicemotion",
@@ -592,6 +711,10 @@ function roundMaybe(value, digits = 4) {
     : null;
 }
 
+// ==========================
+// Complete / export
+// ==========================
+
 function completeSession() {
   if (!session) return null;
 
@@ -601,7 +724,9 @@ function completeSession() {
     session.completedNormally = true;
 
     logEvent("session_complete", {
-      eventCountBeforeComplete: session.events.length
+      eventCountBeforeComplete: session.events.length,
+      participantId: session.participantId,
+      sessionIndex: session.sessionIndex
     });
   }
 
@@ -621,7 +746,7 @@ function downloadSessionJson() {
   const a = document.createElement("a");
 
   a.href = url;
-  a.download = `${finalSession.sessionId}.json`;
+  a.download = `${finalSession.participantId}_s${String(finalSession.sessionIndex).padStart(3, "0")}_${finalSession.sessionId}.json`;
   a.click();
 
   URL.revokeObjectURL(url);
