@@ -5,9 +5,11 @@ const GUIDED_TASKS = [
   { id: "activity_scroll_select", area: "activity", type: "transaction_feed", title: "Find the payment", expectedSeconds: 28 },
   { id: "transaction_category", area: "activity", type: "categorise", title: "Categorise payment", expectedSeconds: 15 },
   { id: "transaction_note", area: "activity", type: "guided_note", title: "Add suggested note", expectedSeconds: 26 },
-  { id: "pots_transfer", area: "pots", type: "pots_transfer", title: "Move money to a pot", expectedSeconds: 24 },
+  { id: "pots_drag_amount", area: "pots", type: "pot_drag", title: "Drag amount to pot", expectedSeconds: 20 },
+  { id: "pots_transfer", area: "pots", type: "pots_transfer", title: "Confirm pot transfer", expectedSeconds: 18 },
+  { id: "insights_swipe_cards", area: "insights", type: "card_swipe", title: "Swipe spending cards", expectedSeconds: 18 },
   { id: "insights_review", area: "insights", type: "insights_review", title: "Review insights", expectedSeconds: 25 },
-  { id: "secure_approval", area: "secure", type: "approval", title: "Approve demo payment", expectedSeconds: 14 },
+  { id: "secure_approval", area: "secure", type: "swipe_approval", title: "Swipe to approve demo payment", expectedSeconds: 18 },
   { id: "secure_reply", area: "secure", type: "guided_reply", title: "Reply to secure message", expectedSeconds: 30 },
   { id: "finish_feeling", area: "finish", type: "finish", title: "Finish review", expectedSeconds: 12 }
 ];
