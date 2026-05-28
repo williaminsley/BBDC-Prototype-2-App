@@ -1,103 +1,68 @@
-const TASKS = [
-  {
-    id: "unlock_bank",
-    title: "Unlock Pulse Bank",
-    subtitle: "Press and hold to open your private review.",
-    type: "hold",
-    targetTimeSec: 8
-  },
-  {
-    id: "account_overview",
-    title: "Check your accounts",
-    subtitle: "Review today’s balances and continue.",
-    type: "account_overview",
-    targetTimeSec: 12
-  },
-  {
-    id: "search_transaction",
-    title: "Search transactions",
-    subtitle: "Type the exact merchant shown below.",
-    type: "typing_search",
-    targetTimeSec: 20
-  },
-  {
-    id: "open_transaction",
-    title: "Open the transaction",
-    subtitle: "Scroll through recent activity and tap the matching payment.",
-    type: "transaction_feed",
-    targetTimeSec: 25
-  },
-  {
-    id: "categorise_transaction",
-    title: "Categorise payment",
-    subtitle: "Choose the category that best fits this transaction.",
-    type: "categorise",
-    targetTimeSec: 15
-  },
-  {
-    id: "transaction_note",
-    title: "Add payment note",
-    subtitle: "Copy the suggested note into the box.",
-    type: "guided_note",
-    targetTimeSec: 25
-  },
-  {
-    id: "review_insights",
-    title: "Review spending insights",
-    subtitle: "Tap each card to review your banking insights.",
-    type: "review_cards",
-    targetTimeSec: 20
-  },
-  {
-    id: "choose_action",
-    title: "Choose next action",
-    subtitle: "Select the banking action you want Pulse to prioritise.",
-    type: "choose_action",
-    targetTimeSec: 15
-  },
-  {
-    id: "secure_message",
-    title: "Reply to secure message",
-    subtitle: "Copy the suggested reply into the box.",
-    type: "guided_reply",
-    targetTimeSec: 30
-  },
-  {
-    id: "finish_review",
-    title: "Finish review",
-    subtitle: "Confirm how the session felt.",
-    type: "finish",
-    targetTimeSec: 15
-  }
+const GUIDED_TASKS = [
+  { id: "unlock_code", area: "secure", type: "code", title: "Unlock Pulse", expectedSeconds: 12 },
+  { id: "home_balance_check", area: "home", type: "tap_account", title: "Check your balance", expectedSeconds: 14 },
+  { id: "activity_search", area: "activity", type: "typing_search", title: "Search payment history", expectedSeconds: 22 },
+  { id: "activity_scroll_select", area: "activity", type: "transaction_feed", title: "Find the payment", expectedSeconds: 28 },
+  { id: "transaction_category", area: "activity", type: "categorise", title: "Categorise payment", expectedSeconds: 15 },
+  { id: "transaction_note", area: "activity", type: "guided_note", title: "Add suggested note", expectedSeconds: 26 },
+  { id: "pots_transfer", area: "pots", type: "pots_transfer", title: "Move money to a pot", expectedSeconds: 24 },
+  { id: "insights_review", area: "insights", type: "insights_review", title: "Review insights", expectedSeconds: 25 },
+  { id: "secure_approval", area: "secure", type: "approval", title: "Approve demo payment", expectedSeconds: 14 },
+  { id: "secure_reply", area: "secure", type: "guided_reply", title: "Reply to secure message", expectedSeconds: 30 },
+  { id: "finish_feeling", area: "finish", type: "finish", title: "Finish review", expectedSeconds: 12 }
 ];
 
-const BANKING_CONTENT = {
+const NAV_TABS = [
+  { id: "home", label: "Home", icon: "Home" },
+  { id: "activity", label: "Activity", icon: "Card" },
+  { id: "pots", label: "Pots", icon: "Pot" },
+  { id: "insights", label: "Insights", icon: "Tip" },
+  { id: "secure", label: "Secure", icon: "Lock" }
+];
+
+const BANKING_LIBRARY = {
   accounts: [
-    { name: "Current account", balance: "£1,284.20", change: "+£240.00" },
-    { name: "Savings pot", balance: "£3,950.00", change: "+£25.00" },
-    { name: "Travel card", balance: "£186.45", change: "-£14.70" }
+    { id: "current", name: "Current Account", balance: "GBP 1,284.20", sub: "Available now", accent: "coral" },
+    { id: "bills", name: "Bills Account", balance: "GBP 642.12", sub: "Next bill tomorrow", accent: "blue" },
+    { id: "travel", name: "Travel Card", balance: "GBP 186.45", sub: "Ready for trips", accent: "teal" }
   ],
   merchants: [
-    { merchant: "PureGym", amount: "£14.70", category: "Fitness", note: "monthly membership", reply: "Yes, please save this for later." },
-    { merchant: "Trainline", amount: "£25.17", category: "Travel", note: "train to Manchester", reply: "Yes, please add this to travel." },
-    { merchant: "Spotify", amount: "£12.40", category: "Subscription", note: "music subscription", reply: "Yes, please keep this reminder." },
-    { merchant: "Pret", amount: "£6.19", category: "Food", note: "lunch near campus", reply: "Yes, please mark this as food." },
-    { merchant: "Uber", amount: "£6.04", category: "Travel", note: "ride to station", reply: "Yes, please tag this as travel." },
-    { merchant: "Boots", amount: "£37.03", category: "Health", note: "pharmacy purchase", reply: "Yes, please save the receipt." },
-    { merchant: "Tesco", amount: "£5.96", category: "Groceries", note: "weekly groceries", reply: "Yes, please mark as groceries." },
-    { merchant: "Apple", amount: "£29.97", category: "Shopping", note: "icloud storage", reply: "Yes, please keep this subscription." }
+    { merchant: "PureGym", amount: "GBP 14.70", category: "Fitness", note: "monthly membership", reply: "Yes, please save this as fitness.", icon: "PG", hint: "membership payment" },
+    { merchant: "Trainline", amount: "GBP 25.17", category: "Travel", note: "train to Manchester", reply: "Yes, please add this to travel.", icon: "TR", hint: "ticket purchase" },
+    { merchant: "Spotify", amount: "GBP 12.40", category: "Subscription", note: "music subscription", reply: "Yes, please keep this reminder.", icon: "SP", hint: "monthly subscription" },
+    { merchant: "Pret", amount: "GBP 6.19", category: "Food", note: "lunch near campus", reply: "Yes, please mark this as food.", icon: "PR", hint: "food and coffee" },
+    { merchant: "Uber", amount: "GBP 6.04", category: "Travel", note: "ride to station", reply: "Yes, please tag this as travel.", icon: "UB", hint: "short ride" },
+    { merchant: "Boots", amount: "GBP 37.03", category: "Health", note: "pharmacy purchase", reply: "Yes, please save the receipt.", icon: "BT", hint: "health purchase" },
+    { merchant: "Tesco", amount: "GBP 5.96", category: "Groceries", note: "weekly groceries", reply: "Yes, please mark as groceries.", icon: "TS", hint: "small shop" },
+    { merchant: "Apple", amount: "GBP 29.97", category: "Subscription", note: "icloud storage", reply: "Yes, please keep this subscription.", icon: "AP", hint: "cloud storage" }
   ],
-  categories: ["Travel", "Food", "Fitness", "Subscription", "Groceries", "Health", "Shopping", "Other"],
-  insights: [
-    { title: "Subscriptions", body: "You have 3 recurring payments this month." },
-    { title: "Travel spend", body: "Travel is slightly higher than last week." },
-    { title: "Food & coffee", body: "Small purchases added up to £42 this week." }
+  fillerTransactions: [
+    { merchant: "Sainsbury's", amount: "GBP 18.42", category: "Groceries", icon: "SA", when: "Today" },
+    { merchant: "Nottingham Coffee", amount: "GBP 4.80", category: "Food", icon: "NC", when: "Yesterday" },
+    { merchant: "Amazon", amount: "GBP 22.99", category: "Shopping", icon: "AM", when: "Yesterday" },
+    { merchant: "Waterstones", amount: "GBP 9.99", category: "Shopping", icon: "WA", when: "This week" },
+    { merchant: "National Express", amount: "GBP 11.20", category: "Travel", icon: "NE", when: "This week" },
+    { merchant: "Deliveroo", amount: "GBP 16.74", category: "Food", icon: "DE", when: "This week" },
+    { merchant: "Co-op", amount: "GBP 7.35", category: "Groceries", icon: "CO", when: "Last week" },
+    { merchant: "IKEA", amount: "GBP 32.50", category: "Home", icon: "IK", when: "Last week" },
+    { merchant: "Odeon", amount: "GBP 13.50", category: "Entertainment", icon: "OD", when: "Last week" },
+    { merchant: "EE", amount: "GBP 28.00", category: "Bills", icon: "EE", when: "Last month" },
+    { merchant: "iCloud", amount: "GBP 2.99", category: "Subscription", icon: "IC", when: "Last month" },
+    { merchant: "Rudy's Pizza", amount: "GBP 17.90", category: "Food", icon: "RP", when: "Last month" }
   ],
-  actions: [
-    "Review subscriptions",
-    "Set travel budget",
-    "Track food spend",
-    "Save receipt"
+  categories: ["Travel", "Food", "Fitness", "Subscription", "Groceries", "Health", "Shopping", "Bills", "Other"],
+  pots: [
+    { id: "travel", name: "Travel Pot", balance: "GBP 186.45", target: "GBP 500", icon: "TR" },
+    { id: "holiday", name: "Holiday Pot", balance: "GBP 420.00", target: "GBP 900", icon: "HO" },
+    { id: "emergency", name: "Emergency Pot", balance: "GBP 950.00", target: "GBP 1,500", icon: "EM" }
   ],
-  feelings: ["Easy", "Normal", "Distracted", "Rushed"]
+  insightTemplates: [
+    { id: "subscriptions", title: "Subscriptions", body: "Spotify and iCloud renew this week.", answer: "Subscriptions", icon: "SU" },
+    { id: "travel", title: "Travel", body: "Trainline spending is up this month.", answer: "Travel", icon: "TR" },
+    { id: "bill", title: "Upcoming bill", body: "Phone bill is due tomorrow.", answer: "Phone bill", icon: "BI" },
+    { id: "coffee", title: "Food and coffee", body: "Small purchases total GBP 42 this week.", answer: "Food and coffee", icon: "FC" }
+  ],
+  feelings: ["Easy", "Normal", "Distracted", "Rushed"],
+  codes: ["4826", "2841", "7395", "1586", "6042", "9317"],
+  transferAmounts: ["5", "7", "10", "12"]
 };
