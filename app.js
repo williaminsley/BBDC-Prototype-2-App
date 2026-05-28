@@ -5,7 +5,6 @@ const appState = {
   selectedContext: {},
   content: {},
   evidenceByTask: {},
-  motionStarted: false,
   identity: null
 };
 
@@ -15,23 +14,37 @@ window.currentScreenId = "welcome";
 
 function renderWelcome() {
   window.currentScreenId = "welcome";
+  appState.identity = ensureIdentity();
 
   app.innerHTML = `
-    <section class="screen">
-      <div class="hero-card">
-        <p class="eyebrow">Prototype 2</p>
-        <h1>Pulse Daily Review</h1>
+    <section class="screen banking-home">
+      <div class="bank-topbar">
+        <div>
+          <p class="eyebrow">Pulse Bank</p>
+          <h1>Good afternoon</h1>
+        </div>
+        <div class="avatar-dot">PB</div>
+      </div>
+
+      <div class="balance-card">
+        <p class="muted">Total balance</p>
+        <h2>£5,420.65</h2>
+        <p class="positive">+£265.00 this month</p>
+      </div>
+
+      <div class="card">
+        <h2>Daily banking review</h2>
         <p class="muted">
-          Complete a short app-style review while privacy-preserving interaction
-          data is collected for behavioural biometrics research.
+          Open your short Pulse Bank review. You’ll search transactions,
+          categorise a payment, review insights and reply to a secure message.
         </p>
 
         <div class="privacy-box">
-          <p><strong>Records:</strong> timing, taps, typing rhythm, scrolling, swipes, drags and motion/orientation where available.</p>
-          <p><strong>Does not store:</strong> raw typed text or geolocation.</p>
+          <p><strong>Anonymous ID:</strong> ${escapeHtml(appState.identity.participantId)}</p>
+          <p><strong>Privacy:</strong> raw typed text and geolocation are not stored.</p>
         </div>
 
-        <button class="primary-btn" onclick="renderContext()">Start session</button>
+        <button class="primary-btn" onclick="renderContext()">Start review</button>
       </div>
     </section>
   `;
@@ -39,24 +52,22 @@ function renderWelcome() {
 
 function renderContext() {
   window.currentScreenId = "context";
-
   appState.identity = ensureIdentity();
 
   app.innerHTML = `
     <section class="screen">
       <div class="topbar">
-        <span>Pulse</span>
+        <span>Pulse Bank</span>
         <span>Setup</span>
       </div>
 
       <div class="card">
-        <h2>Before you start</h2>
-        <p class="muted">Add quick context for this session.</p>
+        <h2>Session context</h2>
+        <p class="muted">Choose the option that best describes this run.</p>
 
-        <div class="mini-card">
-          <p class="muted">Participant ID</p>
+        <div class="mini-card compact">
+          <p class="muted">Anonymous participant</p>
           <h3>${escapeHtml(appState.identity.participantId)}</h3>
-          <p class="hint">This browser/device keeps the same anonymous ID for repeated sessions.</p>
         </div>
 
         <label for="posture">Posture</label>
@@ -88,25 +99,7 @@ function renderContext() {
           <option value="moving">Moving / travelling</option>
         </select>
 
-        <label for="focus">Focus level</label>
-        <select id="focus">
-          <option value="5">Very focused</option>
-          <option value="4">Focused</option>
-          <option value="3">Neutral</option>
-          <option value="2">Distracted</option>
-          <option value="1">Very distracted</option>
-        </select>
-
-        <label for="tiredness">Tiredness</label>
-        <select id="tiredness">
-          <option value="1">Not tired</option>
-          <option value="2">Slightly tired</option>
-          <option value="3">Neutral</option>
-          <option value="4">Tired</option>
-          <option value="5">Very tired</option>
-        </select>
-
-        <button class="primary-btn" onclick="startSession()">Begin review</button>
+        <button class="primary-btn" onclick="startSession()">Open secure review</button>
       </div>
     </section>
   `;
@@ -121,9 +114,7 @@ async function startSession() {
     posture: document.getElementById("posture").value,
     handUse: document.getElementById("handUse").value,
     dominantHand: document.getElementById("dominantHand").value,
-    environment: document.getElementById("environment").value,
-    focus: document.getElementById("focus").value,
-    tiredness: document.getElementById("tiredness").value
+    environment: document.getElementById("environment").value
   };
 
   appState.content = generateSessionContent();
@@ -134,8 +125,6 @@ async function startSession() {
   const motionPermission = await requestMotionPermission();
   startMotionLogging();
 
-  appState.motionStarted = true;
-
   logEvent("motion_logging_started", {
     permissionResult: motionPermission,
     participantId: appState.identity.participantId
@@ -145,19 +134,20 @@ async function startSession() {
 }
 
 function generateSessionContent() {
-  const merchants = shuffleArray([...ROTATING_CONTENT.merchants]);
-  const targetMerchant = merchants[0];
+  const feedItems = shuffleArray([...BANKING_CONTENT.merchants]);
+  const target = feedItems[0];
 
   return {
-    searchTerm: randomChoice(ROTATING_CONTENT.searchTerms),
-    targetMerchant,
-    feedItems: merchants.map((merchant) => ({
-      merchant,
-      amount: randomAmount()
-    })),
-    priorities: shuffleArray([...ROTATING_CONTENT.priorities]),
-    suggestions: shuffleArray([...ROTATING_CONTENT.suggestions]),
-    messagePrompt: randomChoice(ROTATING_CONTENT.messagePrompts)
+    target,
+    searchTerm: target.merchant,
+    feedItems,
+    accounts: BANKING_CONTENT.accounts,
+    categories: BANKING_CONTENT.categories,
+    insights: BANKING_CONTENT.insights,
+    actions: BANKING_CONTENT.actions,
+    messagePrompt: `Pulse has found ${target.merchant} ${target.amount}. Should we save this note?`,
+    suggestedReply: target.reply,
+    suggestedNote: target.note
   };
 }
 
@@ -186,13 +176,12 @@ function goToTask(index) {
 
 function renderTask(task, index) {
   window.currentScreenId = task.id;
-
   const progress = Math.round(((index + 1) / TASKS.length) * 100);
 
   app.innerHTML = `
     <section class="screen">
       <div class="topbar">
-        <span>Pulse</span>
+        <span>Pulse Bank</span>
         <span>${index + 1}/${TASKS.length}</span>
       </div>
 
@@ -201,9 +190,9 @@ function renderTask(task, index) {
       </div>
 
       <div class="task-header">
-        <p class="eyebrow">Daily review</p>
-        <h2>${task.title}</h2>
-        <p class="muted">${task.subtitle}</p>
+        <p class="eyebrow">Secure daily review</p>
+        <h2>${escapeHtml(task.title)}</h2>
+        <p class="muted">${escapeHtml(task.subtitle)}</p>
       </div>
 
       <div class="task-body">
@@ -223,127 +212,141 @@ function renderTask(task, index) {
 }
 
 function renderTaskBody(task) {
+  const target = appState.content.target;
+
   switch (task.type) {
     case "hold":
       return `
-        <button class="hold-card" data-component-id="hold_button">
-          Hold to begin
+        <button class="hold-card banking-lock" data-component-id="unlock_button">
+          <span class="lock-icon">●</span>
+          Hold to unlock review
         </button>
-        <p class="hint">Hold for around one second, then continue.</p>
+        <p class="hint">This gives a clear start point for the session.</p>
       `;
 
-    case "swipe_intro":
+    case "account_overview":
       return `
-        <div class="swipe-instruction">Swipe or click at least two cards.</div>
-        <div class="swipe-stack">
-          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_activity">Today’s activity</button>
-          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_messages">Messages waiting</button>
-          <button class="swipe-card" data-review-card="true" data-component-id="intro_card_priorities">Priorities to organise</button>
+        <div class="account-list">
+          ${appState.content.accounts.map((a, i) => `
+            <button class="account-card" data-account-card="true" data-component-id="account_${i}">
+              <span>
+                <strong>${escapeHtml(a.name)}</strong>
+                <small>${escapeHtml(a.change)}</small>
+              </span>
+              <span>${escapeHtml(a.balance)}</span>
+            </button>
+          `).join("")}
         </div>
+        <p class="hint">Tap one account card to confirm you have reviewed the overview.</p>
       `;
 
     case "typing_search":
       return `
         <div class="mini-card">
-          <p>Search for:</p>
+          <p class="muted">Search for this merchant</p>
           <h3>${escapeHtml(appState.content.searchTerm)}</h3>
         </div>
-        <input class="large-input" data-component-id="search_input" placeholder="Search activity..." autocomplete="off" autocapitalize="none" spellcheck="false" />
+        <input class="large-input" data-component-id="search_input"
+          placeholder="Type ${escapeAttr(appState.content.searchTerm)}"
+          autocomplete="off" autocapitalize="none" spellcheck="false" />
       `;
 
-    case "scroll_find":
+    case "transaction_feed":
       return `
-        <p class="hint">Find and tap: <strong>${escapeHtml(appState.content.targetMerchant)}</strong></p>
-        <div class="feed-list" data-log-scroll="true" data-component-id="activity_feed">
-          ${appState.content.feedItems
-            .map(
-              (item) => `
-            <button class="feed-item" data-merchant="${escapeAttr(item.merchant)}" data-component-id="feed_item_${slugify(item.merchant)}">
-              <span>${escapeHtml(item.merchant)}</span>
-              <span>£${item.amount}</span>
+        <p class="hint">Find and tap <strong>${escapeHtml(target.merchant)}</strong>.</p>
+        <div class="feed-list banking-feed" data-log-scroll="true" data-component-id="transaction_feed">
+          ${appState.content.feedItems.map((item) => `
+            <button class="feed-item" data-merchant="${escapeAttr(item.merchant)}" data-component-id="txn_${slugify(item.merchant)}">
+              <span>
+                <strong>${escapeHtml(item.merchant)}</strong>
+                <small>Today · Card payment</small>
+              </span>
+              <span>${escapeHtml(item.amount)}</span>
             </button>
-          `
-            )
-            .join("")}
+          `).join("")}
         </div>
       `;
 
     case "categorise":
       return `
-        <div class="mini-card">
-          <h3>${escapeHtml(appState.content.targetMerchant)}</h3>
-          <p>Choose a category</p>
+        <div class="transaction-card">
+          <p class="muted">Transaction</p>
+          <h3>${escapeHtml(target.merchant)}</h3>
+          <p>${escapeHtml(target.amount)} · Today</p>
         </div>
         <div class="chip-grid">
-          ${ROTATING_CONTENT.categories
-            .map(
-              (c) => `
-            <button class="chip" data-category="${escapeAttr(c)}" data-component-id="category_${slugify(c)}">${escapeHtml(c)}</button>
-          `
-            )
-            .join("")}
-        </div>
-      `;
-
-    case "typing_note":
-      return `
-        <textarea class="large-textarea" data-component-id="note_input" placeholder="Add 2–5 words..." autocomplete="off" spellcheck="false"></textarea>
-      `;
-
-    case "drag_reorder":
-      return `
-        <div class="priority-list">
-          ${appState.content.priorities
-            .map(
-              (p) => `
-            <button class="priority-card" data-draggable-card="true" data-priority-card="true" data-item="${escapeAttr(p)}" data-component-id="priority_${slugify(p)}">
-              ${escapeHtml(p)}
+          ${appState.content.categories.map((c) => `
+            <button class="chip" data-category="${escapeAttr(c)}" data-component-id="category_${slugify(c)}">
+              ${escapeHtml(c)}
             </button>
-          `
-            )
-            .join("")}
+          `).join("")}
         </div>
       `;
 
-    case "swipe_decisions":
+    case "guided_note":
       return `
-        <div class="swipe-instruction">Swipe cards, or use Dismiss / Keep twice.</div>
-        <div class="swipe-stack">
-          ${appState.content.suggestions
-            .map(
-              (s) => `
-            <button class="swipe-card" data-review-decision-card="true" data-component-id="decision_card_${slugify(s)}">${escapeHtml(s)}</button>
-          `
-            )
-            .join("")}
+        <div class="mini-card">
+          <p class="muted">Copy this payment note</p>
+          <h3>${escapeHtml(appState.content.suggestedNote)}</h3>
         </div>
-        <div class="decision-row">
-          <button class="secondary-btn" data-decision="dismiss" data-component-id="decision_dismiss">Dismiss</button>
-          <button class="secondary-btn" data-decision="keep" data-component-id="decision_keep">Keep</button>
+        <textarea class="large-textarea" data-component-id="payment_note_input"
+          placeholder="Copy: ${escapeAttr(appState.content.suggestedNote)}"
+          autocomplete="off" spellcheck="false"></textarea>
+      `;
+
+    case "review_cards":
+      return `
+        <div class="insight-list">
+          ${appState.content.insights.map((insight, i) => `
+            <button class="insight-card" data-insight-card="true" data-component-id="insight_${i}">
+              <strong>${escapeHtml(insight.title)}</strong>
+              <span>${escapeHtml(insight.body)}</span>
+            </button>
+          `).join("")}
+        </div>
+        <p class="hint">Tap all three cards. Swipes/touch movement are still logged naturally.</p>
+      `;
+
+    case "choose_action":
+      return `
+        <div class="mini-card">
+          <p class="muted">Recommended based on today</p>
+          <h3>${escapeHtml(target.category)} · ${escapeHtml(target.merchant)}</h3>
+        </div>
+        <div class="action-list">
+          ${appState.content.actions.map((a) => `
+            <button class="action-card" data-action-card="true" data-action="${escapeAttr(a)}" data-component-id="action_${slugify(a)}">
+              ${escapeHtml(a)}
+            </button>
+          `).join("")}
         </div>
       `;
 
-    case "typing_reply":
+    case "guided_reply":
       return `
         <div class="message-card">
-          <p class="muted">Alex from Support</p>
+          <p class="muted">Secure message from Pulse</p>
           <p>${escapeHtml(appState.content.messagePrompt)}</p>
         </div>
-        <textarea class="large-textarea" data-component-id="reply_input" placeholder="Type short reply..." autocomplete="off" spellcheck="false"></textarea>
+        <div class="mini-card">
+          <p class="muted">Copy this reply</p>
+          <h3>${escapeHtml(appState.content.suggestedReply)}</h3>
+        </div>
+        <textarea class="large-textarea" data-component-id="secure_reply_input"
+          placeholder="Copy: ${escapeAttr(appState.content.suggestedReply)}"
+          autocomplete="off" spellcheck="false"></textarea>
       `;
 
-    case "final_checkin":
+    case "finish":
       return `
         <div class="chip-grid">
-          ${ROTATING_CONTENT.feelings
-            .map(
-              (x) => `
-            <button class="chip" data-feeling="${escapeAttr(x)}" data-component-id="feeling_${slugify(x)}">${escapeHtml(x)}</button>
-          `
-            )
-            .join("")}
+          ${BANKING_CONTENT.feelings.map((x) => `
+            <button class="chip" data-feeling="${escapeAttr(x)}" data-component-id="feeling_${slugify(x)}">
+              ${escapeHtml(x)}
+            </button>
+          `).join("")}
         </div>
-        <textarea class="large-textarea" data-component-id="final_note_input" placeholder="Optional few words..." autocomplete="off" spellcheck="false"></textarea>
+        <p class="hint">Choose one option to complete the banking review.</p>
       `;
 
     default:
@@ -356,125 +359,58 @@ function attachTaskSpecificHandlers(task) {
     case "hold":
       attachHoldHandlers();
       break;
-
-    case "swipe_intro":
-      attachReviewCardHandlers(task);
-      attachSwipeEvidenceMonitor(task);
+    case "account_overview":
+      attachAccountHandlers();
       break;
-
     case "typing_search":
-    case "typing_note":
-    case "typing_reply":
+    case "guided_note":
+    case "guided_reply":
       attachTypingEvidenceHandlers(task);
       break;
-
-    case "scroll_find":
+    case "transaction_feed":
       attachFeedHandlers();
       break;
-
     case "categorise":
       attachCategoryHandlers();
       break;
-
-    case "drag_reorder":
-      attachDragEvidenceMonitor();
-      attachPrioritySelectionHandlers();
+    case "review_cards":
+      attachInsightHandlers();
       break;
-
-    case "swipe_decisions":
-      attachSwipeEvidenceMonitor(task);
-      attachDecisionCardClickHandlers();
-      attachDecisionHandlers();
+    case "choose_action":
+      attachActionHandlers();
       break;
-
-    case "final_checkin":
+    case "finish":
       attachFinalCheckinHandlers();
       break;
-
     default:
       break;
   }
 }
 
 function attachHoldHandlers() {
-  const el = document.querySelector("[data-component-id='hold_button']");
+  const el = document.querySelector("[data-component-id='unlock_button']");
   if (!el) return;
 
   let start = null;
 
   el.addEventListener("pointerdown", () => {
     start = performance.now();
-
-    logEvent("hold_start", {
-      componentId: "hold_button"
-    });
+    logEvent("hold_start", { componentId: "unlock_button" });
   });
 
   el.addEventListener("pointerup", () => {
     const durationMs = start ? Math.round(performance.now() - start) : null;
-
-    updateTaskEvidence("hold_to_start", {
-      holdEnds: 1,
-      holdDurationMs: durationMs
-    });
-
-    logEvent("hold_end", {
-      componentId: "hold_button",
-      durationMs
-    });
+    updateTaskEvidence("unlock_bank", { holdEnds: 1, holdDurationMs: durationMs });
+    logEvent("hold_end", { componentId: "unlock_button", durationMs });
   });
 }
 
-function attachReviewCardHandlers(task) {
-  const taskId = task.id;
-  let cardsReviewed = getTaskEvidence(taskId).cardsReviewed || 0;
-  const reviewed = new Set();
-
-  document.querySelectorAll("[data-review-card='true']").forEach((card) => {
+function attachAccountHandlers() {
+  document.querySelectorAll("[data-account-card='true']").forEach((card) => {
     card.addEventListener("click", () => {
-      const id = card.dataset.componentId;
-
-      if (!reviewed.has(id)) {
-        reviewed.add(id);
-        cardsReviewed += 1;
-        card.classList.add("selected-card");
-      }
-
-      updateTaskEvidence(taskId, {
-        cardsReviewed
-      });
-
-      logEvent("review_card_selected", {
-        componentId: id,
-        cardsReviewed
-      });
-    });
-  });
-}
-
-function attachDecisionCardClickHandlers() {
-  const taskId = "swipe_decisions";
-  let decisionCardClicks = getTaskEvidence(taskId).decisionCardClicks || 0;
-  const clicked = new Set();
-
-  document.querySelectorAll("[data-review-decision-card='true']").forEach((card) => {
-    card.addEventListener("click", () => {
-      const id = card.dataset.componentId;
-
-      if (!clicked.has(id)) {
-        clicked.add(id);
-        decisionCardClicks += 1;
-        card.classList.add("selected-card");
-      }
-
-      updateTaskEvidence(taskId, {
-        decisionCardClicks
-      });
-
-      logEvent("decision_card_selected", {
-        componentId: id,
-        decisionCardClicks
-      });
+      markSelected(card, "[data-account-card='true']");
+      updateTaskEvidence("account_overview", { accountReviewed: true });
+      logEvent("account_card_selected", { componentId: card.dataset.componentId });
     });
   });
 }
@@ -485,7 +421,13 @@ function attachTypingEvidenceHandlers(task) {
 
   input.addEventListener("input", () => {
     updateTaskEvidence(task.id, {
-      inputLength: input.value.length
+      inputLength: input.value.length,
+      targetLength:
+        task.id === "search_transaction"
+          ? appState.content.searchTerm.length
+          : task.id === "transaction_note"
+            ? appState.content.suggestedNote.length
+            : appState.content.suggestedReply.length
     });
   });
 }
@@ -494,14 +436,15 @@ function attachFeedHandlers() {
   document.querySelectorAll(".feed-item").forEach((button) => {
     button.addEventListener("click", () => {
       const merchant = button.dataset.merchant;
-      const selectedTarget = merchant === appState.content.targetMerchant;
+      const selectedTarget = merchant === appState.content.target.merchant;
+      markSelected(button, ".feed-item");
 
-      updateTaskEvidence("scroll_find", {
+      updateTaskEvidence("open_transaction", {
         selectedTarget,
         selectedMerchant: merchant
       });
 
-      logEvent("feed_item_selected", {
+      logEvent("transaction_selected", {
         componentId: button.dataset.componentId,
         merchant,
         selectedTarget
@@ -514,16 +457,12 @@ function attachCategoryHandlers() {
   document.querySelectorAll("[data-category]").forEach((button) => {
     button.addEventListener("click", () => {
       const category = button.dataset.category;
+      markSelected(button, "[data-category]");
 
-      document.querySelectorAll("[data-category]").forEach((x) => {
-        x.classList.remove("selected-card");
-      });
-
-      button.classList.add("selected-card");
-
-      updateTaskEvidence("categorise_item", {
+      updateTaskEvidence("categorise_transaction", {
         categorySelected: true,
-        category
+        category,
+        expectedCategory: appState.content.target.category
       });
 
       logEvent("category_selected", {
@@ -534,41 +473,38 @@ function attachCategoryHandlers() {
   });
 }
 
-function attachPrioritySelectionHandlers() {
-  document.querySelectorAll("[data-priority-card='true']").forEach((card) => {
+function attachInsightHandlers() {
+  const reviewed = new Set();
+
+  document.querySelectorAll("[data-insight-card='true']").forEach((card) => {
     card.addEventListener("click", () => {
-      const item = card.dataset.item;
-
-      document.querySelectorAll("[data-priority-card='true']").forEach((x) => {
-        x.classList.remove("selected-card");
-      });
-
+      reviewed.add(card.dataset.componentId);
       card.classList.add("selected-card");
 
-      updateTaskEvidence("reorder_priorities", {
-        prioritySelected: true,
-        selectedPriority: item
+      updateTaskEvidence("review_insights", {
+        cardsReviewed: reviewed.size
       });
 
-      logEvent("priority_selected", {
+      logEvent("insight_card_reviewed", {
         componentId: card.dataset.componentId,
-        selectedPriority: item
+        cardsReviewed: reviewed.size
       });
     });
   });
 }
 
-function attachDecisionHandlers() {
-  document.querySelectorAll("[data-decision]").forEach((button) => {
+function attachActionHandlers() {
+  document.querySelectorAll("[data-action-card='true']").forEach((button) => {
     button.addEventListener("click", () => {
-      const action = button.dataset.decision;
-      const current = getTaskEvidence("swipe_decisions");
+      const action = button.dataset.action;
+      markSelected(button, "[data-action-card='true']");
 
-      updateTaskEvidence("swipe_decisions", {
-        decisionActions: (current.decisionActions || 0) + 1
+      updateTaskEvidence("choose_action", {
+        actionSelected: true,
+        action
       });
 
-      logEvent("decision_card_action", {
+      logEvent("banking_action_selected", {
         componentId: button.dataset.componentId,
         action
       });
@@ -580,14 +516,9 @@ function attachFinalCheckinHandlers() {
   document.querySelectorAll("[data-feeling]").forEach((button) => {
     button.addEventListener("click", () => {
       const feeling = button.dataset.feeling;
+      markSelected(button, "[data-feeling]");
 
-      document.querySelectorAll("[data-feeling]").forEach((x) => {
-        x.classList.remove("selected-card");
-      });
-
-      button.classList.add("selected-card");
-
-      updateTaskEvidence("final_checkin", {
+      updateTaskEvidence("finish_review", {
         finalFeeling: true,
         feeling
       });
@@ -598,80 +529,13 @@ function attachFinalCheckinHandlers() {
       });
     });
   });
-
-  const input = document.querySelector("textarea");
-
-  if (input) {
-    input.addEventListener("input", () => {
-      updateTaskEvidence("final_checkin", {
-        finalNoteLength: input.value.length
-      });
-    });
-  }
-}
-
-function attachDragEvidenceMonitor() {
-  const taskId = "reorder_priorities";
-  let dragEnds = getTaskEvidence(taskId).dragEnds || 0;
-
-  document.querySelectorAll("[data-draggable-card='true']").forEach((card) => {
-    card.addEventListener("pointerup", () => {
-      dragEnds += 1;
-
-      updateTaskEvidence(taskId, {
-        dragEnds
-      });
-    });
-  });
-}
-
-function attachSwipeEvidenceMonitor(task) {
-  const taskId = task.id;
-  let swipeStarts = getTaskEvidence(taskId).swipeStarts || 0;
-  let swipeSummaries = getTaskEvidence(taskId).swipeSummaries || 0;
-
-  document.querySelectorAll(".swipe-card").forEach((card) => {
-    let startX = null;
-    let startY = null;
-
-    card.addEventListener("pointerdown", (e) => {
-      startX = e.clientX;
-      startY = e.clientY;
-      swipeStarts += 1;
-
-      updateTaskEvidence(taskId, {
-        swipeStarts,
-        swipeSummaries
-      });
-    });
-
-    card.addEventListener("pointerup", (e) => {
-      if (startX === null || startY === null) return;
-
-      const distance = Math.hypot(e.clientX - startX, e.clientY - startY);
-
-      if (distance >= 30) {
-        swipeSummaries += 1;
-      }
-
-      updateTaskEvidence(taskId, {
-        swipeStarts,
-        swipeSummaries
-      });
-
-      startX = null;
-      startY = null;
-    });
-  });
 }
 
 function attemptContinue() {
   const task = window.currentTask;
-
   if (!task) return;
 
   const warning = validateTaskEvidence(task);
-
   if (warning) {
     showTaskWarning(warning);
     return;
@@ -685,52 +549,34 @@ function validateTaskEvidence(task) {
   const evidence = getTaskEvidence(task.id);
 
   switch (task.id) {
-    case "hold_to_start":
-      return evidence.holdEnds ? null : "Press and hold the start card first.";
-
-    case "swipe_intro":
-      return (evidence.cardsReviewed || 0) >= 2 || (evidence.swipeSummaries || 0) >= 2
+    case "unlock_bank":
+      return evidence.holdEnds ? null : "Press and hold the unlock card first.";
+    case "account_overview":
+      return evidence.accountReviewed ? null : "Tap one account card before continuing.";
+    case "search_transaction":
+      return (evidence.inputLength || 0) >= Math.min(3, appState.content.searchTerm.length)
         ? null
-        : "Swipe or click at least two cards.";
-
-    case "search_activity":
-      return (evidence.inputLength || 0) >= 2
-        ? null
-        : "Type the search term before continuing.";
-
-    case "scroll_find":
+        : `Type ${appState.content.searchTerm} into the search box.`;
+    case "open_transaction":
       return evidence.selectedTarget
         ? null
-        : `Tap the ${appState.content.targetMerchant} item first.`;
-
-    case "categorise_item":
+        : `Tap the ${appState.content.target.merchant} transaction.`;
+    case "categorise_transaction":
       return evidence.categorySelected ? null : "Choose a category first.";
-
-    case "add_note":
-      return (evidence.inputLength || 0) >= 4
+    case "transaction_note":
+      return (evidence.inputLength || 0) >= Math.min(4, appState.content.suggestedNote.length)
         ? null
-        : "Add a short note first.";
-
-    case "reorder_priorities":
-      return evidence.prioritySelected || (evidence.dragEnds || 0) >= 1
+        : `Copy the note: ${appState.content.suggestedNote}`;
+    case "review_insights":
+      return (evidence.cardsReviewed || 0) >= 3 ? null : "Tap all three insight cards.";
+    case "choose_action":
+      return evidence.actionSelected ? null : "Choose one banking action.";
+    case "secure_message":
+      return (evidence.inputLength || 0) >= Math.min(6, appState.content.suggestedReply.length)
         ? null
-        : "Drag or click your top priority first.";
-
-    case "swipe_decisions":
-      return (evidence.swipeSummaries || 0) >= 2 ||
-        (evidence.decisionActions || 0) >= 2 ||
-        (evidence.decisionCardClicks || 0) >= 2
-        ? null
-        : "Swipe two cards, click two cards, or use the decision buttons twice.";
-
-    case "reply_message":
-      return (evidence.inputLength || 0) >= 6
-        ? null
-        : "Type a short reply first.";
-
-    case "final_checkin":
-      return evidence.finalFeeling ? null : "Choose how the session felt first.";
-
+        : "Copy the suggested secure reply.";
+    case "finish_review":
+      return evidence.finalFeeling ? null : "Choose how the review felt.";
     default:
       return null;
   }
@@ -739,7 +585,6 @@ function validateTaskEvidence(task) {
 function showTaskWarning(message) {
   const warning = document.getElementById("taskWarning");
   if (!warning) return;
-
   warning.textContent = message;
   warning.hidden = false;
 }
@@ -747,24 +592,22 @@ function showTaskWarning(message) {
 function clearTaskWarning() {
   const warning = document.getElementById("taskWarning");
   if (!warning) return;
-
   warning.textContent = "";
   warning.hidden = true;
 }
 
 function renderComplete() {
   window.currentScreenId = "complete";
-
   const s = getSession();
 
   app.innerHTML = `
-    <section class="screen">
+    <section class="screen banking-home">
       <div class="hero-card">
-        <p class="eyebrow">Complete</p>
-        <h1>Session finished</h1>
+        <p class="eyebrow">Pulse Bank</p>
+        <h1>Review complete</h1>
 
         <div class="mini-card">
-          <p class="muted">Participant</p>
+          <p class="muted">Anonymous participant</p>
           <h3>${escapeHtml(s?.participantId || appState.identity?.participantId || "unknown")}</h3>
           <p class="hint">Session ${escapeHtml(String(s?.sessionIndex || ""))}</p>
         </div>
@@ -788,7 +631,6 @@ function ensureEvidenceBucket(taskId) {
 
 function updateTaskEvidence(taskId, patch) {
   ensureEvidenceBucket(taskId);
-
   appState.evidenceByTask[taskId] = {
     ...appState.evidenceByTask[taskId],
     ...patch
@@ -798,6 +640,11 @@ function updateTaskEvidence(taskId, patch) {
 function getTaskEvidence(taskId) {
   ensureEvidenceBucket(taskId);
   return appState.evidenceByTask[taskId];
+}
+
+function markSelected(el, selector) {
+  document.querySelectorAll(selector).forEach((x) => x.classList.remove("selected-card"));
+  el.classList.add("selected-card");
 }
 
 function randomChoice(arr) {
@@ -813,7 +660,6 @@ function shuffleArray(arr) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-
   return arr;
 }
 

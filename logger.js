@@ -7,15 +7,8 @@ let lastWindowScrollLog = 0;
 let lastMotionLog = 0;
 let lastOrientationLog = 0;
 
-let activeSwipe = null;
-let activeDrags = new Map();
-
 function nowIso() {
   return new Date().toISOString();
-}
-
-function nowMs() {
-  return performance.now();
 }
 
 function tRelMs() {
@@ -23,23 +16,16 @@ function tRelMs() {
   return Math.round(performance.now() - session.startedAtPerf);
 }
 
-// ==========================
-// Prototype 1-style identity
-// ==========================
-
+// Prototype 1-style identity: localStorage participantId + sessionCount.
 function makeId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID().replace(/-/g, "");
   }
 
   const cryptoObj = globalThis.crypto || globalThis.msCrypto;
-
   if (cryptoObj?.getRandomValues) {
     const bytes = new Uint8Array(16);
     cryptoObj.getRandomValues(bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
     return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
@@ -49,11 +35,9 @@ function makeId() {
 function makeParticipantId() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "p";
-
   for (let i = 0; i < 6; i += 1) {
     s += alphabet[Math.floor(Math.random() * alphabet.length)];
   }
-
   return s;
 }
 
@@ -65,10 +49,7 @@ function ensureIdentity() {
     localStorage.setItem("participantId", participantId);
   }
 
-  return {
-    uid: null,
-    participantId
-  };
+  return { uid: null, participantId };
 }
 
 function getNextSessionIndex() {
@@ -76,10 +57,6 @@ function getNextSessionIndex() {
   localStorage.setItem("sessionCount", String(count));
   return count;
 }
-
-// ==========================
-// Session setup
-// ==========================
 
 function createSession(context = {}, generatedContent = {}) {
   const identity = ensureIdentity();
@@ -102,11 +79,7 @@ function createSession(context = {}, generatedContent = {}) {
     sessionDurationMs: null,
     completedNormally: false,
 
-    context: {
-      ...context,
-      participantId: identity.participantId
-    },
-
+    context: { ...context, participantId: identity.participantId },
     generatedContent,
     config: SESSION_CONFIG,
 
@@ -118,7 +91,6 @@ function createSession(context = {}, generatedContent = {}) {
 
     device: getDeviceSummary(),
     capabilities: getCapabilitySummary(),
-
     permissions: {
       motion: "not_requested",
       geolocation: "not_collected_privacy"
@@ -136,7 +108,6 @@ function createSession(context = {}, generatedContent = {}) {
   });
 
   attachGlobalListeners();
-
   return session;
 }
 
@@ -151,26 +122,21 @@ function getDeviceSummary() {
     vendor: navigator.vendor || null,
     language: navigator.language,
     maxTouchPoints: navigator.maxTouchPoints || 0,
-
     pointerEventSupported: "PointerEvent" in window,
     touchEventSupported: "TouchEvent" in window,
     visualViewportSupported: "visualViewport" in window,
     deviceMotionSupported: "DeviceMotionEvent" in window,
     deviceOrientationSupported: "DeviceOrientationEvent" in window,
-
     innerWidth: window.innerWidth,
     innerHeight: window.innerHeight,
-
     screen: {
       w: screen.width,
       h: screen.height,
       dpr: window.devicePixelRatio || 1
     },
-
     screenWidth: screen.width,
     screenHeight: screen.height,
     devicePixelRatio: window.devicePixelRatio || 1,
-
     timezoneOffsetMin: new Date().getTimezoneOffset(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   };
@@ -206,10 +172,6 @@ function storageAvailable(type) {
   }
 }
 
-// ==========================
-// Event logger
-// ==========================
-
 function sanitisePayload(payload = {}) {
   const blockedKeys = [
     "value",
@@ -235,14 +197,16 @@ function logEvent(kind, payload = {}) {
   if (!session) return;
 
   const cleanPayload = sanitisePayload(payload);
+  const timestampIso = nowIso();
+  const rel = tRelMs();
 
   session.events.push({
     kind,
     t: kind,
-    tRelMs: tRelMs(),
-    ms: tRelMs(),
-    timestampIso: nowIso(),
-    tISO: nowIso(),
+    tRelMs: rel,
+    ms: rel,
+    timestampIso,
+    tISO: timestampIso,
     taskId: window.currentTask?.id || null,
     taskIndex: window.currentTaskIndex ?? null,
     screenId: window.currentScreenId || null,
@@ -287,10 +251,6 @@ function classifyKey(key) {
   if (/^[.,!?;:'"-]$/.test(key)) return "PUNCT";
   return "OTHER";
 }
-
-// ==========================
-// Input logging
-// ==========================
 
 function attachPrivacySafeInputLogging(root = document) {
   root.querySelectorAll("input, textarea").forEach((el) => {
@@ -340,21 +300,15 @@ function attachPrivacySafeInputLogging(root = document) {
 
     el.addEventListener("input", () => {
       const currentLength = el.value.length;
-
       logEvent("input", {
         componentId: el.dataset.componentId || el.id || null,
         valueLength: currentLength,
         deltaLength: currentLength - previousLength
       });
-
       previousLength = currentLength;
     });
   });
 }
-
-// ==========================
-// Pointer / swipe / drag logging
-// ==========================
 
 function pointerPayload(e, el = null) {
   return {
@@ -375,19 +329,6 @@ function attachPointerLogging() {
     (e) => {
       logEvent("pointerdown", pointerPayload(e, e.target));
       logEvent("pointer_down", pointerPayload(e, e.target));
-
-      activeSwipe = {
-        pointerId: e.pointerId,
-        componentId: e.target?.dataset?.componentId || e.target?.id || null,
-        startX: e.clientX,
-        startY: e.clientY,
-        lastX: e.clientX,
-        lastY: e.clientY,
-        startMs: performance.now(),
-        pathLengthPx: 0,
-        pointCount: 1,
-        maxStepSpeedPxPerMs: 0
-      };
     },
     { passive: true }
   );
@@ -396,29 +337,8 @@ function attachPointerLogging() {
     "pointermove",
     (e) => {
       const now = performance.now();
-
-      if (activeSwipe && activeSwipe.pointerId === e.pointerId) {
-        const dxStep = e.clientX - activeSwipe.lastX;
-        const dyStep = e.clientY - activeSwipe.lastY;
-        const stepDist = Math.hypot(dxStep, dyStep);
-        const dt = Math.max(now - (activeSwipe.lastMoveMs || activeSwipe.startMs), 1);
-
-        activeSwipe.pathLengthPx += stepDist;
-        activeSwipe.pointCount += 1;
-        activeSwipe.maxStepSpeedPxPerMs = Math.max(
-          activeSwipe.maxStepSpeedPxPerMs,
-          stepDist / dt
-        );
-
-        activeSwipe.lastX = e.clientX;
-        activeSwipe.lastY = e.clientY;
-        activeSwipe.lastMoveMs = now;
-      }
-
       if (now - lastPointerMoveLog < 16) return;
-
       lastPointerMoveLog = now;
-
       logEvent("pointermove", pointerPayload(e, e.target));
       logEvent("pointer_move", pointerPayload(e, e.target));
     },
@@ -430,7 +350,6 @@ function attachPointerLogging() {
     (e) => {
       logEvent("pointerup", pointerPayload(e, e.target));
       logEvent("pointer_up", pointerPayload(e, e.target));
-      finishSwipeIfActive(e, "pointerup");
     },
     { passive: true }
   );
@@ -439,47 +358,9 @@ function attachPointerLogging() {
     "pointercancel",
     (e) => {
       logEvent("pointercancel", pointerPayload(e, e.target));
-      finishSwipeIfActive(e, "pointercancel");
     },
     { passive: true }
   );
-}
-
-function finishSwipeIfActive(e, endKind) {
-  if (!activeSwipe || activeSwipe.pointerId !== e.pointerId) return;
-
-  const durationMs = Math.max(performance.now() - activeSwipe.startMs, 1);
-  const dx = e.clientX - activeSwipe.startX;
-  const dy = e.clientY - activeSwipe.startY;
-  const distancePx = Math.hypot(dx, dy);
-  const pathLengthPx = activeSwipe.pathLengthPx || distancePx;
-  const straightness = pathLengthPx > 0 ? distancePx / pathLengthPx : null;
-
-  if (distancePx >= 30 || pathLengthPx >= 60) {
-    logEvent("swipe_summary", {
-      componentId: activeSwipe.componentId,
-      endKind,
-      dx: Number(dx.toFixed(3)),
-      dy: Number(dy.toFixed(3)),
-      distancePx: Number(distancePx.toFixed(3)),
-      durationMs: Math.round(durationMs),
-      pathLengthPx: Number(pathLengthPx.toFixed(3)),
-      meanSpeedPxPerMs: Number((pathLengthPx / durationMs).toFixed(5)),
-      maxSpeedPxPerMs: Number(activeSwipe.maxStepSpeedPxPerMs.toFixed(5)),
-      straightness: straightness === null ? null : Number(straightness.toFixed(5)),
-      direction:
-        Math.abs(dx) >= Math.abs(dy)
-          ? dx >= 0
-            ? "right"
-            : "left"
-          : dy >= 0
-            ? "down"
-            : "up",
-      pointCount: activeSwipe.pointCount
-    });
-  }
-
-  activeSwipe = null;
 }
 
 function attachScrollableLogging(root = document) {
@@ -493,9 +374,7 @@ function attachScrollableLogging(root = document) {
       "scroll",
       () => {
         const now = performance.now();
-
         if (now - lastLog < 30) return;
-
         lastLog = now;
 
         logEvent("scroll", {
@@ -511,66 +390,9 @@ function attachScrollableLogging(root = document) {
   });
 }
 
-function attachDragCardLogging(root = document) {
-  root.querySelectorAll("[data-draggable-card='true']").forEach((el) => {
-    if (el.dataset.dragLoggerAttached === "true") return;
-    el.dataset.dragLoggerAttached = "true";
-
-    el.addEventListener("pointerdown", (e) => {
-      activeDrags.set(e.pointerId, {
-        item: el.dataset.item || null,
-        startMs: performance.now()
-      });
-
-      el.setPointerCapture?.(e.pointerId);
-
-      logEvent("drag_start", {
-        ...pointerPayload(e, el),
-        item: el.dataset.item || null
-      });
-    });
-
-    el.addEventListener("pointermove", (e) => {
-      if (!activeDrags.has(e.pointerId)) return;
-
-      logEvent("drag_move", {
-        ...pointerPayload(e, el),
-        item: el.dataset.item || null
-      });
-    });
-
-    el.addEventListener("pointerup", (e) => {
-      if (!activeDrags.has(e.pointerId)) return;
-
-      const drag = activeDrags.get(e.pointerId);
-      activeDrags.delete(e.pointerId);
-
-      logEvent("drag_end", {
-        ...pointerPayload(e, el),
-        item: drag.item,
-        durationMs: Math.round(performance.now() - drag.startMs)
-      });
-    });
-
-    el.addEventListener("pointercancel", (e) => {
-      if (!activeDrags.has(e.pointerId)) return;
-
-      const drag = activeDrags.get(e.pointerId);
-      activeDrags.delete(e.pointerId);
-
-      logEvent("drag_cancel", {
-        ...pointerPayload(e, el),
-        item: drag.item,
-        durationMs: Math.round(performance.now() - drag.startMs)
-      });
-    });
-  });
-}
-
 function attachTaskElementLogging(root = document) {
   attachPrivacySafeInputLogging(root);
   attachScrollableLogging(root);
-  attachDragCardLogging(root);
 }
 
 function attachGlobalListeners() {
@@ -598,9 +420,7 @@ function attachGlobalListeners() {
     "scroll",
     () => {
       const now = performance.now();
-
       if (now - lastWindowScrollLog < 30) return;
-
       lastWindowScrollLog = now;
 
       logEvent("window_scroll", {
@@ -614,10 +434,6 @@ function attachGlobalListeners() {
   attachPointerLogging();
 }
 
-// ==========================
-// Motion / orientation
-// ==========================
-
 async function requestMotionPermission() {
   if (!session) return "no_session";
 
@@ -628,45 +444,34 @@ async function requestMotionPermission() {
     ) {
       const motionState = await DeviceMotionEvent.requestPermission();
       session.permissions.motion = motionState;
-
-      logEvent("motion_permission_result", {
-        permission: motionState
-      });
-
+      logEvent("motion_permission_result", { permission: motionState });
       return motionState;
     }
 
     session.permissions.motion = "not_required_or_unavailable";
-
     logEvent("motion_permission_result", {
       permission: session.permissions.motion
     });
-
     return session.permissions.motion;
   } catch (err) {
     session.permissions.motion = "error";
-
     logEvent("motion_permission_error", {
       name: err.name,
       message: err.message
     });
-
     return "error";
   }
 }
 
 function startMotionLogging() {
   if (!session || motionListenersAttached) return;
-
   motionListenersAttached = true;
 
   window.addEventListener(
     "devicemotion",
     (e) => {
       const now = performance.now();
-
       if (now - lastMotionLog < 50) return;
-
       lastMotionLog = now;
 
       logEvent("devicemotion", {
@@ -689,9 +494,7 @@ function startMotionLogging() {
     "deviceorientation",
     (e) => {
       const now = performance.now();
-
       if (now - lastOrientationLog < 50) return;
-
       lastOrientationLog = now;
 
       logEvent("deviceorientation", {
@@ -710,10 +513,6 @@ function roundMaybe(value, digits = 4) {
     ? Number(value.toFixed(digits))
     : null;
 }
-
-// ==========================
-// Complete / export
-// ==========================
 
 function completeSession() {
   if (!session) return null;
@@ -735,7 +534,6 @@ function completeSession() {
 
 function downloadSessionJson() {
   const finalSession = completeSession();
-
   if (!finalSession) return;
 
   const blob = new Blob([JSON.stringify(finalSession, null, 2)], {
@@ -744,10 +542,8 @@ function downloadSessionJson() {
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-
   a.href = url;
   a.download = `${finalSession.participantId}_s${String(finalSession.sessionIndex).padStart(3, "0")}_${finalSession.sessionId}.json`;
   a.click();
-
   URL.revokeObjectURL(url);
 }

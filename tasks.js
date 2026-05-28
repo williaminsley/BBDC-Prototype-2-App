@@ -1,102 +1,103 @@
 const TASKS = [
   {
-    id: "hold_to_start",
-    title: "Hold to start",
-    subtitle: "Press and hold to begin today’s review.",
+    id: "unlock_bank",
+    title: "Unlock Pulse Bank",
+    subtitle: "Press and hold to open your private review.",
     type: "hold",
-    targetTimeSec: 10,
-    minEvidence: { holdEnds: 1 }
+    targetTimeSec: 8
   },
   {
-    id: "swipe_intro",
-    title: "Review intro cards",
-    subtitle: "Swipe or click at least two cards to preview today’s activity.",
-    type: "swipe_intro",
-    targetTimeSec: 20,
-    minEvidence: { cardsReviewed: 2 }
+    id: "account_overview",
+    title: "Check your accounts",
+    subtitle: "Review today’s balances and continue.",
+    type: "account_overview",
+    targetTimeSec: 12
   },
   {
-    id: "search_activity",
-    title: "Search activity",
-    subtitle: "Search for the highlighted item.",
+    id: "search_transaction",
+    title: "Search transactions",
+    subtitle: "Type the exact merchant shown below.",
     type: "typing_search",
-    targetTimeSec: 25,
-    minEvidence: { inputLength: 2 }
+    targetTimeSec: 20
   },
   {
-    id: "scroll_find",
-    title: "Find an item",
-    subtitle: "Scroll through the feed and open the target item.",
-    type: "scroll_find",
-    targetTimeSec: 25,
-    minEvidence: { selectedTarget: true }
+    id: "open_transaction",
+    title: "Open the transaction",
+    subtitle: "Scroll through recent activity and tap the matching payment.",
+    type: "transaction_feed",
+    targetTimeSec: 25
   },
   {
-    id: "categorise_item",
-    title: "Categorise item",
-    subtitle: "Choose the most suitable category.",
+    id: "categorise_transaction",
+    title: "Categorise payment",
+    subtitle: "Choose the category that best fits this transaction.",
     type: "categorise",
-    targetTimeSec: 15,
-    minEvidence: { categorySelected: true }
+    targetTimeSec: 15
   },
   {
-    id: "add_note",
-    title: "Add a short note",
-    subtitle: "Add 2–5 words. Text content is not stored.",
-    type: "typing_note",
-    targetTimeSec: 30,
-    minEvidence: { inputLength: 4 }
+    id: "transaction_note",
+    title: "Add payment note",
+    subtitle: "Copy the suggested note into the box.",
+    type: "guided_note",
+    targetTimeSec: 25
   },
   {
-    id: "reorder_priorities",
-    title: "Choose top priority",
-    subtitle: "Drag a card or click the priority that matters most today.",
-    type: "drag_reorder",
-    targetTimeSec: 25,
-    minEvidence: { prioritySelected: true }
+    id: "review_insights",
+    title: "Review spending insights",
+    subtitle: "Tap each card to review your banking insights.",
+    type: "review_cards",
+    targetTimeSec: 20
   },
   {
-    id: "swipe_decisions",
-    title: "Review suggestions",
-    subtitle: "Swipe cards left or right, or use the decision buttons.",
-    type: "swipe_decisions",
-    targetTimeSec: 25,
-    minEvidence: { decisions: 2 }
+    id: "choose_action",
+    title: "Choose next action",
+    subtitle: "Select the banking action you want Pulse to prioritise.",
+    type: "choose_action",
+    targetTimeSec: 15
   },
   {
-    id: "reply_message",
-    title: "Reply to message",
-    subtitle: "Type a short reply. Text content is not stored.",
-    type: "typing_reply",
-    targetTimeSec: 35,
-    minEvidence: { inputLength: 6 }
+    id: "secure_message",
+    title: "Reply to secure message",
+    subtitle: "Copy the suggested reply into the box.",
+    type: "guided_reply",
+    targetTimeSec: 30
   },
   {
-    id: "final_checkin",
-    title: "Final check-in",
-    subtitle: "Tell us how the session felt.",
-    type: "final_checkin",
-    targetTimeSec: 20,
-    minEvidence: { finalFeeling: true }
+    id: "finish_review",
+    title: "Finish review",
+    subtitle: "Confirm how the session felt.",
+    type: "finish",
+    targetTimeSec: 15
   }
 ];
 
-const ROTATING_CONTENT = {
-  searchTerms: ["travel", "coffee", "gym", "train", "spotify", "rent"],
-  merchants: ["Trainline", "Pret", "Tesco", "Spotify", "Uber", "PureGym", "Apple", "Boots"],
-  categories: ["Travel", "Food", "Bills", "Shopping", "Health", "Other"],
-  priorities: ["Save more", "Track travel", "Review subscriptions", "Reply later"],
-  suggestions: [
-    "Subscription reminder",
-    "Travel spend insight",
-    "Budget alert",
-    "Message follow-up"
+const BANKING_CONTENT = {
+  accounts: [
+    { name: "Current account", balance: "£1,284.20", change: "+£240.00" },
+    { name: "Savings pot", balance: "£3,950.00", change: "+£25.00" },
+    { name: "Travel card", balance: "£186.45", change: "-£14.70" }
   ],
-  messagePrompts: [
-    "Can you add a quick note about this?",
-    "Can you confirm what this was for?",
-    "Should we save this for later?",
-    "Can you add a short update?"
+  merchants: [
+    { merchant: "PureGym", amount: "£14.70", category: "Fitness", note: "monthly membership", reply: "Yes, please save this for later." },
+    { merchant: "Trainline", amount: "£25.17", category: "Travel", note: "train to Manchester", reply: "Yes, please add this to travel." },
+    { merchant: "Spotify", amount: "£12.40", category: "Subscription", note: "music subscription", reply: "Yes, please keep this reminder." },
+    { merchant: "Pret", amount: "£6.19", category: "Food", note: "lunch near campus", reply: "Yes, please mark this as food." },
+    { merchant: "Uber", amount: "£6.04", category: "Travel", note: "ride to station", reply: "Yes, please tag this as travel." },
+    { merchant: "Boots", amount: "£37.03", category: "Health", note: "pharmacy purchase", reply: "Yes, please save the receipt." },
+    { merchant: "Tesco", amount: "£5.96", category: "Groceries", note: "weekly groceries", reply: "Yes, please mark as groceries." },
+    { merchant: "Apple", amount: "£29.97", category: "Shopping", note: "icloud storage", reply: "Yes, please keep this subscription." }
+  ],
+  categories: ["Travel", "Food", "Fitness", "Subscription", "Groceries", "Health", "Shopping", "Other"],
+  insights: [
+    { title: "Subscriptions", body: "You have 3 recurring payments this month." },
+    { title: "Travel spend", body: "Travel is slightly higher than last week." },
+    { title: "Food & coffee", body: "Small purchases added up to £42 this week." }
+  ],
+  actions: [
+    "Review subscriptions",
+    "Set travel budget",
+    "Track food spend",
+    "Save receipt"
   ],
   feelings: ["Easy", "Normal", "Distracted", "Rushed"]
 };
