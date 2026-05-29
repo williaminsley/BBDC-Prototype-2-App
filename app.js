@@ -62,7 +62,7 @@ function clearWarning(){let w=document.getElementById("taskWarning");if(w){w.tex
 function renderCompletion(){window.currentTask=null;window.currentScreenId="complete";completeSession();let s=getSession();app.innerHTML=`<section class="intro-screen completion-screen"><div class="success-orb">OK</div><h1>Review complete</h1><p class="lead">Thanks - this session is ready for development review.</p><div class="summary-card"><div><span>Anonymous ID</span><strong>${escapeHtml(s.participantId)}</strong></div><div><span>Session</span><strong>${escapeHtml(String(s.sessionIndex))}</strong></div><div><span>Duration</span><strong>${Math.round((s.sessionDurationMs||0)/1000)}s</strong></div><div><span>Events</span><strong>${s.events.length}</strong></div></div>${APP_MODE==="debug"?`<button class="primary-btn" onclick="downloadSessionJson()">Download JSON</button>`:`<p class="muted">Your session has been uploaded.</p>`}<button class="secondary-btn" onclick="renderContext()">Start another session</button></section>`}
 function ensureEvidence(id){if(!state.evidence[id])state.evidence[id]={}}
 function updateEvidence(id,p){ensureEvidence(id);state.evidence[id]={...state.evidence[id],...p}}
-function getEvidence(id){ensureEvidence(id);return state.evidence[id}
+function getEvidence(id){ensureEvidence(id);return state.evidence[id]}
 function randomChoice(a){return a[Math.floor(Math.random()*a.length)]}
 function shuffleArray(a){let c=[...a];for(let i=c.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[c[i],c[j]]=[c[j],c[i]]}return c}
 function normaliseForValidation(v){return String(v??"").trim().replace(/\s+/g," ").toLowerCase()}
