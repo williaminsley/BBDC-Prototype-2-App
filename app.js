@@ -17,6 +17,12 @@ const state = {
 
 const DEVICE_MODEL_OPTIONS = {
   iphone: [
+    "iPhone 17e",
+    "iPhone 17 Pro Max",
+    "iPhone 17 Pro",
+    "iPhone Air",
+    "iPhone 17",
+    "iPhone 16e",
     "iPhone 16 Pro Max",
     "iPhone 16 Pro",
     "iPhone 16 Plus",
@@ -37,12 +43,24 @@ const DEVICE_MODEL_OPTIONS = {
     "Other iPhone / not sure"
   ],
   android: [
-    "Samsung Galaxy S Ultra series",
-    "Samsung Galaxy S/Plus series",
+    "Samsung Galaxy S26 Ultra",
+    "Samsung Galaxy S26+",
+    "Samsung Galaxy S26",
+    "Samsung Galaxy S25 Ultra",
+    "Samsung Galaxy S25+",
+    "Samsung Galaxy S25",
+    "Samsung Galaxy S25 Edge",
+    "Samsung Galaxy Z Fold 7",
+    "Samsung Galaxy Z Flip 7",
     "Samsung Galaxy A series",
-    "Google Pixel Pro series",
-    "Google Pixel standard/A series",
-    "OnePlus phone",
+    "Google Pixel 10 Pro XL",
+    "Google Pixel 10 Pro",
+    "Google Pixel 10",
+    "Google Pixel 10a",
+    "Google Pixel 10 Pro Fold",
+    "Google Pixel 9 / 9 Pro series",
+    "OnePlus 15",
+    "OnePlus 13 / 13R",
     "Xiaomi / Redmi / POCO phone",
     "Oppo phone",
     "Honor phone",
@@ -229,6 +247,7 @@ function renderContext() {
           "devicePlatformSelect"
         )}
         ${renderDeviceModelField()}
+        ${renderDeviceModelHelp()}
       </article>
 
       <article class="info-card">
@@ -323,6 +342,19 @@ function renderDeviceModelField() {
           .join("")}
       </select>
     </label>
+  `;
+}
+
+function renderDeviceModelHelp() {
+  return `
+    <div class="inline-note">
+      <strong>How to check your model</strong>
+      <span>
+        iPhone: Settings → General → About → Model Name.<br />
+        Android: Settings → About phone → Model name / Device name.<br />
+        Laptop: macOS Apple menu → About This Mac, or Windows Settings → System → About.
+      </span>
+    </div>
   `;
 }
 
