@@ -2,6 +2,7 @@ let session = null;
 let listenersAttached = false;
 let motionListenersAttached = false;
 let viewportListenersAttached = false;
+let loggingClosed = false;
 let lastPointerMoveLog = 0;
 let lastTouchMoveLog = 0;
 let lastWindowScrollLog = 0;
@@ -114,13 +115,16 @@ function storageAvailable(type) {
     storage.setItem(key, key);
     storage.removeItem(key);
     return true;
-  } catch (_) { return false; }
+  } catch (_) {
+    return false;
+  }
 }
 
 function createSession(context = {}, generatedContent = {}) {
   const identity = ensureIdentity();
   const sessionIndex = getNextSessionIndex();
   taskStarts.clear();
+  loggingClosed = false;
   session = {
     schemaName: SCHEMA_NAME,
     schemaVersion: SCHEMA_VERSION,
@@ -164,11 +168,18 @@ function sanitisePayload(payload = {}) {
   return out;
 }
 
+function activeAreaFromScreen(screenId) {
+  const first = String(screenId || "").split("_")[0];
+  return ["home", "activity", "pots", "insights", "secure"].includes(first) ? first : null;
+}
+
 function logEvent(kind, payload = {}) {
   if (!session) return;
+  if (loggingClosed && kind !== "download_session_json") return;
   const clean = sanitisePayload(payload);
   const rel = tRelMs();
   const timestampIso = nowIso();
+  const screenId = window.currentScreenId || null;
   session.events.push({
     kind,
     t: kind,
@@ -178,7 +189,9 @@ function logEvent(kind, payload = {}) {
     tISO: timestampIso,
     taskId: window.currentTask?.id || null,
     taskIndex: window.currentTaskIndex ?? null,
-    screenId: window.currentScreenId || null,
+    screenId,
+    activeArea: clean.area || window.currentActiveArea || activeAreaFromScreen(screenId),
+    instructionArea: window.currentTask?.area || null,
     componentId: clean.componentId || clean.zone || null,
     payload: clean
   });
@@ -255,14 +268,14 @@ function touchPayload(e, target = null) {
   const centroidX = all.length ? all.reduce((s, t) => s + t.clientX, 0) / all.length : null;
   const centroidY = all.length ? all.reduce((s, t) => s + t.clientY, 0) / all.length : null;
   const pinchDistance = all.length >= 2 ? Math.hypot(all[1].clientX - all[0].clientX, all[1].clientY - all[0].clientY) : null;
-  return { componentId: componentIdOf(target?.closest?.("[data-component-id]") || target), touchesCount: all.length, changedTouchesCount: changed.length, targetTouchesCount: [...(e.targetTouches || [])].length, touchIdentifierPresent: first?.identifier != null, x: roundMaybe(first?.clientX, 2), y: roundMaybe(first?.clientY, 2), xNorm: window.innerWidth && first ? roundMaybe(first.clientX / window.innerWidth, 5) : null, yNorm: window.innerHeight && first ? roundMaybe(first.clientY / window.innerHeight, 5) : null, force: roundMaybe(first?.force, 4), radiusX: roundMaybe(first?.radiusX, 4), radiusY: roundMaybe(first?.radiusY, 4), rotationAngle: roundMaybe(first?.rotationAngle, 4), centroidX: roundMaybe(centroidX, 2), centroidY: roundMaybe(centroidY, 2), pinchDistance: roundMaybe(pinchDistance, 2) };
+  return { componentId: componentIdOf(target?.closest?.("[data-component-id]") || target), touchesCount: all.length, changedTouchesCount: changed.length, targetTouchesCount: e.targetTouches?.length ?? null, touchIdentifierPresent: first?.identifier != null, x: roundMaybe(first?.clientX, 2), y: roundMaybe(first?.clientY, 2), xNorm: first && innerWidth ? roundMaybe(first.clientX / innerWidth, 5) : null, yNorm: first && innerHeight ? roundMaybe(first.clientY / innerHeight, 5) : null, force: roundMaybe(first?.force), radiusX: roundMaybe(first?.radiusX), radiusY: roundMaybe(first?.radiusY), rotationAngle: roundMaybe(first?.rotationAngle), centroidX: roundMaybe(centroidX, 2), centroidY: roundMaybe(centroidY, 2), pinchDistance: roundMaybe(pinchDistance, 2) };
 }
 
 function attachPointerLogging() {
   document.addEventListener("pointerdown", (e) => logEvent("pointerdown", pointerPayload(e, e.target)), { passive: true });
   document.addEventListener("pointermove", (e) => { const now = performance.now(); if (now - lastPointerMoveLog < 16) return; lastPointerMoveLog = now; logEvent("pointermove", pointerPayload(e, e.target)); }, { passive: true });
   document.addEventListener("pointerup", (e) => logEvent("pointerup", pointerPayload(e, e.target)), { passive: true });
-  document.addEventListener("pointercancel", (e) => logEvent("pointercancel", pointerPayload(e, e.target)), { passive: true });
+  document.addEventListener("pointercancel", (e) => logEvent("pointercancel", { ...pointerPayload(e, e.target), treatedAsPointerEnd: true }), { passive: true });
   if ("onpointerrawupdate" in window) document.addEventListener("pointerrawupdate", (e) => logEvent("pointerrawupdate", pointerPayload(e, e.target)), { passive: true });
   ["touchstart", "touchmove", "touchend", "touchcancel"].forEach((kind) => document.addEventListener(kind, (e) => { if (kind === "touchmove") { const now = performance.now(); if (now - lastTouchMoveLog < 16) return; lastTouchMoveLog = now; } logEvent(kind, touchPayload(e, e.target)); }, { passive: true }));
 }
@@ -272,7 +285,24 @@ function attachScrollableLogging(root = document) {
     if (el.dataset.scrollLoggerAttached === "true") return;
     el.dataset.scrollLoggerAttached = "true";
     let lastLog = 0;
-    el.addEventListener("scroll", () => { const now = performance.now(); if (now - lastLog < 30) return; lastLog = now; logEvent("scroll", { componentId: componentIdOf(el), scrollTop: roundMaybe(el.scrollTop, 2), scrollLeft: roundMaybe(el.scrollLeft, 2), scrollHeight: roundMaybe(el.scrollHeight, 2), scrollWidth: roundMaybe(el.scrollWidth, 2), clientHeight: roundMaybe(el.clientHeight, 2), clientWidth: roundMaybe(el.clientWidth, 2) }); }, { passive: true });
+    el.addEventListener("scroll", () => {
+      const now = performance.now();
+      if (now - lastLog < 30) return;
+      lastLog = now;
+      const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+      logEvent("scroll", {
+        componentId: componentIdOf(el),
+        scrollTop: roundMaybe(el.scrollTop, 2),
+        scrollLeft: roundMaybe(el.scrollLeft, 2),
+        scrollTopRatio: maxTop ? roundMaybe(Math.max(0, Math.min(1, el.scrollTop / maxTop)), 5) : 0,
+        scrollLeftRatio: maxLeft ? roundMaybe(Math.max(0, Math.min(1, el.scrollLeft / maxLeft)), 5) : 0,
+        scrollHeight: roundMaybe(el.scrollHeight, 2),
+        scrollWidth: roundMaybe(el.scrollWidth, 2),
+        clientHeight: roundMaybe(el.clientHeight, 2),
+        clientWidth: roundMaybe(el.clientWidth, 2)
+      });
+    }, { passive: true });
   });
 }
 
@@ -329,6 +359,7 @@ function completeSession() {
     session.sessionDurationMs = tRelMs();
     session.completedNormally = true;
     logEvent("session_complete", { eventCountBeforeComplete: session.events.length, participantId: session.participantId, sessionIndex: session.sessionIndex, taskCount: session.taskSummary.length });
+    loggingClosed = true;
   }
   return session;
 }
