@@ -3,6 +3,8 @@ let listenersAttached = false;
 let motionListenersAttached = false;
 let viewportListenersAttached = false;
 let loggingClosed = false;
+let memoryParticipantId = null;
+let memorySessionCount = 0;
 let lastPointerMoveLog = 0;
 let lastTouchMoveLog = 0;
 let lastWindowScrollLog = 0;
@@ -13,6 +15,7 @@ const taskStarts = new Map();
 
 function nowIso() { return new Date().toISOString(); }
 function tRelMs() { return session ? Math.round(performance.now() - session.startedAtPerf) : 0; }
+function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
 
 function makeId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replace(/-/g, "");
@@ -32,18 +35,29 @@ function makeParticipantId() {
   return s;
 }
 
+function safeGetLocalStorage(key) {
+  try { return localStorage.getItem(key); } catch (_) { return null; }
+}
+
+function safeSetLocalStorage(key, value) {
+  try { localStorage.setItem(key, value); return true; } catch (_) { return false; }
+}
+
 function ensureIdentity() {
-  let participantId = localStorage.getItem("participantId");
+  let participantId = safeGetLocalStorage("participantId") || memoryParticipantId;
   if (!participantId) {
     participantId = makeParticipantId();
-    localStorage.setItem("participantId", participantId);
+    memoryParticipantId = participantId;
+    safeSetLocalStorage("participantId", participantId);
   }
   return { uid: null, participantId };
 }
 
 function getNextSessionIndex() {
-  const count = Number(localStorage.getItem("sessionCount") || 0) + 1;
-  localStorage.setItem("sessionCount", String(count));
+  const storedCount = Number(safeGetLocalStorage("sessionCount") || 0);
+  const count = Math.max(storedCount, memorySessionCount) + 1;
+  memorySessionCount = count;
+  safeSetLocalStorage("sessionCount", String(count));
   return count;
 }
 
@@ -136,6 +150,8 @@ function createSession(context = {}, generatedContent = {}) {
     startedAtIso: nowIso(),
     createdAtClientISO: nowIso(),
     completedAtIso: null,
+    exportedAtIso: null,
+    exportMethod: null,
     startedAtPerf: performance.now(),
     sessionDurationMs: null,
     completedNormally: false,
@@ -147,7 +163,8 @@ function createSession(context = {}, generatedContent = {}) {
     capabilities: getCapabilitySummary(),
     permissions: { motion: "not_requested", orientation: "not_requested", geolocation: "not_collected_privacy" },
     events: [],
-    taskSummary: []
+    taskSummary: [],
+    qualitySummary: null
   };
   logEvent("session_start", { participantId: identity.participantId, sessionIndex, storesRawText: false, storesGeolocation: false });
   attachGlobalListeners();
@@ -158,12 +175,14 @@ function createSession(context = {}, generatedContent = {}) {
 function getSession() { return session; }
 
 function sanitisePayload(payload = {}) {
-  const blocked = new Set(["value", "text", "rawText", "inputValue", "typedText", "content", "message", "note", "reply", "searchText"]);
+  const blockedSubstrings = ["value", "text", "rawtext", "inputvalue", "typedtext", "content", "message", "note", "reply", "searchtext"];
+  if (Array.isArray(payload)) return payload.map((item) => sanitisePayload(item));
+  if (!payload || typeof payload !== "object") return payload;
   const out = {};
-  for (const [k, v] of Object.entries(payload || {})) {
-    if (blocked.has(k)) out[k] = "[REDACTED]";
-    else if (v && typeof v === "object" && !Array.isArray(v)) out[k] = sanitisePayload(v);
-    else out[k] = v;
+  for (const [key, value] of Object.entries(payload)) {
+    const normalisedKey = String(key).toLowerCase();
+    if (blockedSubstrings.some((blocked) => normalisedKey.includes(blocked))) out[key] = "[REDACTED]";
+    else out[key] = sanitisePayload(value);
   }
   return out;
 }
@@ -175,7 +194,7 @@ function activeAreaFromScreen(screenId) {
 
 function logEvent(kind, payload = {}) {
   if (!session) return;
-  if (loggingClosed && kind !== "download_session_json") return;
+  if (loggingClosed) return;
   const clean = sanitisePayload(payload);
   const rel = tRelMs();
   const timestampIso = nowIso();
@@ -291,12 +310,18 @@ function attachScrollableLogging(root = document) {
       lastLog = now;
       const maxTop = Math.max(0, el.scrollHeight - el.clientHeight);
       const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+      const scrollTopRatioRaw = maxTop ? el.scrollTop / maxTop : 0;
+      const scrollLeftRatioRaw = maxLeft ? el.scrollLeft / maxLeft : 0;
       logEvent("scroll", {
         componentId: componentIdOf(el),
         scrollTop: roundMaybe(el.scrollTop, 2),
         scrollLeft: roundMaybe(el.scrollLeft, 2),
-        scrollTopRatio: maxTop ? roundMaybe(Math.max(0, Math.min(1, el.scrollTop / maxTop)), 5) : 0,
-        scrollLeftRatio: maxLeft ? roundMaybe(Math.max(0, Math.min(1, el.scrollLeft / maxLeft)), 5) : 0,
+        scrollTopMaxPossible: roundMaybe(maxTop, 2),
+        scrollLeftMaxPossible: roundMaybe(maxLeft, 2),
+        scrollTopRatioRaw: roundMaybe(scrollTopRatioRaw, 5),
+        scrollLeftRatioRaw: roundMaybe(scrollLeftRatioRaw, 5),
+        scrollTopRatio: maxTop ? roundMaybe(clamp01(scrollTopRatioRaw), 5) : 0,
+        scrollLeftRatio: maxLeft ? roundMaybe(clamp01(scrollLeftRatioRaw), 5) : 0,
         scrollHeight: roundMaybe(el.scrollHeight, 2),
         scrollWidth: roundMaybe(el.scrollWidth, 2),
         clientHeight: roundMaybe(el.clientHeight, 2),
@@ -352,13 +377,48 @@ function startMotionLogging() {
   window.addEventListener("deviceorientation", (e) => { const now = performance.now(); if (now - lastOrientationLog < 50) return; lastOrientationLog = now; logEvent("deviceorientation", { alpha: roundMaybe(e.alpha), beta: roundMaybe(e.beta), gamma: roundMaybe(e.gamma), absolute: e.absolute ?? null }); }, { passive: true });
 }
 
+function buildQualitySummary() {
+  if (!session) return null;
+  const events = session.events || [];
+  const expectedTaskIds = Array.isArray(window.GUIDED_TASKS) ? window.GUIDED_TASKS.map((task) => task.id) : (typeof GUIDED_TASKS !== "undefined" ? GUIDED_TASKS.map((task) => task.id) : []);
+  const completedTaskIds = session.taskSummary.map((task) => task.taskId);
+  const warnings = [];
+  const has = (kind) => events.some((event) => event.kind === kind);
+  const missingTaskIds = expectedTaskIds.filter((id) => !completedTaskIds.includes(id));
+  if (missingTaskIds.length) warnings.push("missing_task_summaries");
+  if (!has("input")) warnings.push("missing_typing_events");
+  if (!has("scroll")) warnings.push("missing_scroll_events");
+  if (!has("card_swipe_summary")) warnings.push("missing_card_swipe_summary");
+  if (!has("approval_swipe_release")) warnings.push("missing_approval_swipe");
+  if (!has("devicemotion")) warnings.push("missing_motion_events");
+  if (!has("deviceorientation")) warnings.push("missing_orientation_events");
+
+  return {
+    completedTaskCount: session.taskSummary.length,
+    expectedTaskCount: expectedTaskIds.length || null,
+    expectedTaskIds,
+    completedTaskIds,
+    missingTaskIds,
+    eventCount: events.length,
+    hasMotion: has("devicemotion"),
+    hasOrientation: has("deviceorientation"),
+    hasTyping: has("input"),
+    hasScroll: has("scroll"),
+    hasCardSwipeSummary: has("card_swipe_summary"),
+    hasApprovalSwipe: has("approval_swipe_release"),
+    warnings,
+    usableForSignalExtraction: warnings.filter((warning) => warning !== "missing_motion_events" && warning !== "missing_orientation_events").length === 0
+  };
+}
+
 function completeSession() {
   if (!session) return null;
   if (!session.completedAtIso) {
     session.completedAtIso = nowIso();
     session.sessionDurationMs = tRelMs();
     session.completedNormally = true;
-    logEvent("session_complete", { eventCountBeforeComplete: session.events.length, participantId: session.participantId, sessionIndex: session.sessionIndex, taskCount: session.taskSummary.length });
+    session.qualitySummary = buildQualitySummary();
+    logEvent("session_complete", { eventCountBeforeComplete: session.events.length, participantId: session.participantId, sessionIndex: session.sessionIndex, taskCount: session.taskSummary.length, qualityWarnings: session.qualitySummary?.warnings || [] });
     loggingClosed = true;
   }
   return session;
@@ -367,6 +427,8 @@ function completeSession() {
 function downloadSessionJson() {
   const finalSession = completeSession();
   if (!finalSession) return;
+  finalSession.exportedAtIso = nowIso();
+  finalSession.exportMethod = "manual_json_download";
   const blob = new Blob([JSON.stringify(finalSession, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
