@@ -15,19 +15,17 @@
   --max-app-width: 480px;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html,
 body {
   width: 100%;
   min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   color: var(--text);
-  overscroll-behavior: none;
-  overflow-x: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif;
 }
 
@@ -44,17 +42,11 @@ body::before {
 button,
 input,
 textarea,
-select {
-  font: inherit;
-}
-
-button {
-  -webkit-tap-highlight-color: transparent;
-}
+select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
 
 .app-shell {
   width: 100%;
-  max-width: none;
   min-height: 100dvh;
   margin: 0;
   overflow-x: hidden;
@@ -79,20 +71,13 @@ button {
 }
 
 .intro-screen:not(.compact-intro),
-.passcode-screen {
-  justify-content: center;
-}
-
-.context-screen {
-  gap: 12px;
-}
+.passcode-screen { justify-content: center; }
+.context-screen { gap: 12px; }
 
 h1,
 h2,
 h3,
-p {
-  margin-top: 0;
-}
+p { margin-top: 0; }
 
 h1 {
   margin-bottom: 0;
@@ -178,9 +163,7 @@ h3 {
 }
 
 .info-card p:last-child,
-.section-card p:last-child {
-  margin-bottom: 0;
-}
+.section-card p:last-child { margin-bottom: 0; }
 
 .help-card,
 .inline-note,
@@ -259,13 +242,8 @@ h3 {
   border: 0;
 }
 
-.seg-group legend {
-  margin-bottom: 8px;
-}
-
-.context-screen .seg-group legend {
-  margin-bottom: 6px;
-}
+.seg-group legend { margin-bottom: 8px; }
+.context-screen .seg-group legend { margin-bottom: 6px; }
 
 .seg-row {
   display: flex;
@@ -396,9 +374,7 @@ h3 {
   background: #e3e5ea;
 }
 
-.pass-dots span.filled {
-  background: var(--coral);
-}
+.pass-dots span.filled { background: var(--coral); }
 
 .keypad {
   display: grid;
@@ -431,9 +407,7 @@ h3 {
   justify-content: space-between;
 }
 
-.bank-header h1 {
-  font-size: clamp(2rem, 9vw, 2.75rem);
-}
+.bank-header h1 { font-size: clamp(2rem, 9vw, 2.75rem); }
 
 .avatar {
   width: 46px;
@@ -509,9 +483,7 @@ h3 {
   color: white;
 }
 
-.balance-hero span {
-  font-weight: 950;
-}
+.balance-hero span { font-weight: 950; }
 
 .balance-hero p,
 .balance-hero small {
@@ -593,9 +565,7 @@ h3 {
   gap: 8px;
 }
 
-.section-card h2 {
-  margin: 0;
-}
+.section-card h2 { margin: 0; }
 
 .search-pill {
   width: fit-content;
@@ -646,9 +616,7 @@ h3 {
 
 .transaction-detail-card,
 .approval-card,
-.finish-card {
-  text-align: center;
-}
+.finish-card { text-align: center; }
 
 .large-emoji {
   display: inline-grid;
@@ -675,13 +643,17 @@ h3 {
   gap: 10px;
 }
 
-.pot-card.highlight {
-  background: #eafffb;
-}
+.pot-card.highlight { background: #eafffb; }
 
 .secondary-action {
   margin-top: 8px;
   background: #111827;
+  color: white;
+}
+
+.secondary-action.confirmed,
+.secondary-action.selected {
+  background: linear-gradient(135deg, var(--teal), var(--blue));
   color: white;
 }
 
@@ -707,23 +679,13 @@ h3 {
 
 .carousel-wrap {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr;
   align-items: center;
   gap: 8px;
-  margin-inline: -4px;
+  margin-inline: 0;
 }
 
-.carousel-nudge {
-  width: 34px;
-  height: 54px;
-  border: 0;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: var(--shadow-soft);
-  color: var(--text);
-  font-size: 1.7rem;
-  font-weight: 900;
-}
+.carousel-nudge { display: none; }
 
 .swipe-carousel {
   display: flex;
@@ -733,6 +695,14 @@ h3 {
   scroll-snap-type: x mandatory;
   padding: 4px 2px 12px;
   -webkit-overflow-scrolling: touch;
+}
+
+.scroll-only-carousel { margin-inline: 0; }
+
+.spending-card-hint,
+.swipe-carousel::after {
+  content: "";
+  flex: 0 0 1px;
 }
 
 .spend-card {
@@ -758,16 +728,24 @@ h3 {
   position: relative;
   height: 62px;
   margin-top: 8px;
-  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff1e8;
 }
 
+.drag-slider {
+  margin: 22px 38px 0;
+  overflow: visible;
+}
+
+.swipe-confirm { overflow: hidden; }
+
 .drag-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
+  max-width: 100%;
+  border-radius: 999px;
   background: rgba(255, 95, 95, 0.25);
 }
 
@@ -776,7 +754,8 @@ h3 {
   position: absolute;
   top: 50%;
   left: 0;
-  min-width: 76px;
+  display: grid;
+  place-items: center;
   height: 52px;
   transform: translate(-50%, -50%);
   border: 0;
@@ -785,6 +764,15 @@ h3 {
   box-shadow: var(--shadow-soft);
   font-weight: 950;
   touch-action: none;
+  white-space: nowrap;
+}
+
+.drag-thumb {
+  width: 76px;
+  min-width: 76px;
+  padding-inline: 10px;
+  color: var(--blue);
+  overflow: visible;
 }
 
 .swipe-confirm span {
@@ -841,13 +829,8 @@ h3 {
   pointer-events: none;
 }
 
-.sticky-stack > * {
-  pointer-events: auto;
-}
-
-.sticky-stack .primary-btn {
-  min-height: 52px;
-}
+.sticky-stack > * { pointer-events: auto; }
+.sticky-stack .primary-btn { min-height: 52px; }
 
 .bottom-nav {
   display: grid;
@@ -899,95 +882,16 @@ h3 {
   gap: 14px;
 }
 
-.summary-card span {
-  color: var(--muted);
-  font-weight: 800;
-}
-
-.bank-content .section-card:has(.secondary-action) {
-  margin-bottom: 118px;
-}
-
-button,
-.account-card,
-.txn-row,
-.pot-card,
-.insight-card,
-.spend-card,
-.seg-chip,
-.feeling-chip,
-.primary-btn,
-.secondary-action,
-.nav-tab,
-.carousel-nudge {
-  transition: transform 120ms ease, background 140ms ease, box-shadow 140ms ease, border-color 140ms ease, opacity 140ms ease, color 140ms ease;
-}
-
-button:active,
-.account-card:active,
-.txn-row:active,
-.pot-card:active,
-.insight-card:active,
-.spend-card:active,
-.seg-chip:active,
-.feeling-chip:active,
-.primary-btn:active,
-.secondary-action:active,
-.nav-tab:active,
-.carousel-nudge:active {
-  transform: scale(0.985);
-}
-
-.secondary-action:focus,
-.secondary-action:focus-visible {
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--coral), var(--pink));
-  color: white;
-  box-shadow: 0 0 0 3px rgba(255, 95, 95, 0.16), var(--shadow-soft);
-}
-
-.account-card:focus,
-.txn-row:focus,
-.pot-card:focus,
-.insight-card:focus,
-.spend-card:focus,
-.seg-chip:focus,
-.feeling-chip:focus {
-  border-color: rgba(255, 95, 95, 0.65);
-  background: #fff0ef;
-}
-
-@supports (height: 100svh) {
-  html,
-  body,
-  .app-shell,
+@media (max-width: 380px) {
   .intro-screen,
   .passcode-screen,
   .bank-screen {
-    min-height: 100svh;
-  }
-}
-
-@media (max-width: 430px) {
-  .intro-screen,
-  .passcode-screen,
-  .bank-screen {
-    padding-inline: 16px;
+    padding-inline: 14px;
   }
 
-  .info-card,
-  .section-card,
-  .summary-card,
-  .passcode-card,
-  .transaction-detail-card,
-  .approval-card,
-  .finish-card,
-  .balance-hero {
-    padding: 16px;
-    border-radius: 24px;
-  }
+  .drag-slider { margin-inline: 34px; }
 
-  .spend-card {
-    min-width: 82%;
-  }
+  .nav-tab small { font-size: 0.66rem; }
+  .task-banner { grid-template-columns: 1fr; }
+  .progress-ring { justify-self: end; }
 }
