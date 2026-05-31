@@ -174,15 +174,21 @@ function createSession(context = {}, generatedContent = {}) {
 
 function getSession() { return session; }
 
+function shouldRedactKey(key) {
+  const normalisedKey = String(key || "").toLowerCase();
+  const sensitiveExactKeys = new Set([
+    "rawtext", "typedtext", "inputvalue", "userinput", "searchtext", "clipboardtext", "password", "passphrase", "email", "phone"
+  ]);
+  const sensitiveSubstrings = ["rawtext", "typedtext", "inputvalue", "searchtext", "clipboardtext", "password", "passphrase", "email"];
+  return sensitiveExactKeys.has(normalisedKey) || sensitiveSubstrings.some((blocked) => normalisedKey.includes(blocked));
+}
+
 function sanitisePayload(payload = {}) {
-  const blockedSubstrings = ["value", "text", "rawtext", "inputvalue", "typedtext", "content", "message", "note", "reply", "searchtext"];
   if (Array.isArray(payload)) return payload.map((item) => sanitisePayload(item));
   if (!payload || typeof payload !== "object") return payload;
   const out = {};
   for (const [key, value] of Object.entries(payload)) {
-    const normalisedKey = String(key).toLowerCase();
-    if (blockedSubstrings.some((blocked) => normalisedKey.includes(blocked))) out[key] = "[REDACTED]";
-    else out[key] = sanitisePayload(value);
+    out[key] = shouldRedactKey(key) ? "[REDACTED]" : sanitisePayload(value);
   }
   return out;
 }
