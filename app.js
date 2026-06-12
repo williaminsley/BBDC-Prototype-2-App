@@ -265,7 +265,6 @@ async function startReview() {
   state.roundIndex = 0;
   state.content = state.rounds[0];
   state.sessionTasks = buildSessionTaskPlan(state.rounds.length);
-  window.GUIDED_TASKS = state.sessionTasks;
   state.evidence = {};
   state.completedTasks = new Set();
   state.currentTaskIndex = -1;
@@ -513,7 +512,8 @@ function buildLongFeed(target) {
   const insertRatio = 0.55 + Math.random() * 0.3;
   feed.splice(Math.floor(feed.length * insertRatio), 0, target);
   return feed;
-}\n
+}
+
 function placeTargetLow(items, isTarget) {
   const copy = [...items];
   const targetIndex = copy.findIndex(isTarget);
