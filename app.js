@@ -4,6 +4,9 @@ const state = {
   identity: null,
   context: {},
   content: {},
+  rounds: [],
+  roundIndex: 0,
+  sessionTasks: [],
   evidence: {},
   completedTasks: new Set(),
   currentTaskIndex: -1,
@@ -17,6 +20,7 @@ let screenController = new AbortController();
 let bottomStackObserver = null;
 let libraryExtended = false;
 
+const SESSION_ROUND_COUNT = 2;
 const RECENT_TARGET_KEY = "bbdc_recent_targets_v2";
 const RECENT_TARGET_LIMIT = 10;
 
@@ -103,6 +107,7 @@ window.currentTask = null;
 window.currentTaskIndex = null;
 window.currentScreenId = "intro";
 window.currentActiveArea = "home";
+window.currentRoundIndex = null;
 
 function resetScreenListeners() {
   screenController.abort();
@@ -141,8 +146,8 @@ function renderIntro() {
     <section class="intro-screen compact-intro">
       <h1>Behavioural Biometrics Study</h1>
       <p class="lead">This study collects pseudonymised behavioural interaction data for academic research into continuous authentication.</p>
-      <article class="info-card"><h2>What you will do</h2><p>Use a demo bank app naturally. You can move around the bottom menu like a normal app, but complete each highlighted task before finishing.</p><p><strong>Tasks include:</strong> checking balances, exploring cards, searching and filtering transactions, scrolling lists, typing short prompts, dragging a pot slider, moving a spending-card carousel and approving a demo payment.</p></article>
-      <article class="info-card"><h2>What to expect</h2><p>The full session should take around <strong>2-3 minutes</strong>. It is better to behave naturally than to rush.</p><p>Before the app opens, you will answer context questions about your device, environment, posture, fatigue and focus.</p></article>
+      <article class="info-card"><h2>What you will do</h2><p>Use a demo bank app naturally. You can move around the bottom menu like a normal app, but complete each highlighted task before finishing.</p><p><strong>Tasks include:</strong> checking balances, exploring cards, searching and filtering transactions, scrolling lists, typing short prompts, dragging a pot slider, moving a spending-card carousel and approving a demo payment. The banking mission now repeats twice with different generated content.</p></article>
+      <article class="info-card"><h2>What to expect</h2><p>The full session should take around <strong>3-4 minutes</strong>. It is better to behave naturally than to rush.</p><p>Before the app opens, you will answer context questions about your device, environment, posture, fatigue and focus.</p></article>
       <article class="info-card"><h2>Important instructions</h2><p>Use normal typing, scrolling, tapping, dragging and swiping behaviour.</p><p>Only type the short prompted text shown in the app. Do not type personal information.</p><p>Do not take part while driving or in any unsafe situation.</p></article>
       <button id="introNext" class="primary-btn" type="button">Continue to Consent</button>
     </section>`;
@@ -256,7 +261,11 @@ function modelGroupFromPlatform(value) {
 async function startReview() {
   state.identity = ensureIdentity();
   state.context = collectContextAnswers();
-  state.content = generateSessionContent();
+  state.rounds = generateSessionRounds(SESSION_ROUND_COUNT);
+  state.roundIndex = 0;
+  state.content = state.rounds[0];
+  state.sessionTasks = buildSessionTaskPlan(state.rounds.length);
+  window.GUIDED_TASKS = state.sessionTasks;
   state.evidence = {};
   state.completedTasks = new Set();
   state.currentTaskIndex = -1;
@@ -265,7 +274,9 @@ async function startReview() {
   state.reviewedInsights = new Set();
   state.codeInput = "";
   window.currentActiveArea = state.activeArea;
-  createSession(state.context, publicGeneratedContent(state.content));
+  window.currentRoundIndex = 0;
+  createSession(state.context, publicGeneratedContent(state.rounds));
+  logEvent("round_start", { roundIndex: 0, roundNumber: 1, roundCount: state.rounds.length });
   const permissionResult = await requestMotionPermission();
   startMotionLogging();
   logEvent("motion_logging_started", { permissionResult });
@@ -283,8 +294,10 @@ function collectContextAnswers() {
   return context;
 }
 
-function publicGeneratedContent(content) {
-  return {
+function publicGeneratedContent(rounds) {
+  const compactRounds = rounds.map((content, index) => ({
+    roundIndex: index,
+    roundNumber: index + 1,
     targetMerchant: content.target.merchant,
     targetAmount: content.target.amount,
     targetCategory: content.target.category,
@@ -302,17 +315,58 @@ function publicGeneratedContent(content) {
     merchantOptionCount: content.merchantOptions.length,
     categoryOptionCount: content.categoryOptions.length,
     insightOptionCount: content.insights.length,
-    spendingCardCount: content.spendingCards.length,
+    spendingCardCount: content.spendingCards.length
+  }));
+
+  return {
+    roundCount: rounds.length,
+    taskTemplateCount: GUIDED_TASKS.length,
+    totalTaskInstanceCount: rounds.length * GUIDED_TASKS.length,
+    rounds: compactRounds,
+    targetMerchant: compactRounds[0]?.targetMerchant || null,
+    targetAmount: compactRounds[0]?.targetAmount || null,
+    targetCategory: compactRounds[0]?.targetCategory || null,
+    targetWhen: compactRounds[0]?.targetWhen || null,
+    suggestedNote: compactRounds[0]?.suggestedNote || null,
+    suggestedReply: compactRounds[0]?.suggestedReply || null,
+    transferAmount: compactRounds[0]?.transferAmount || null,
+    filterTarget: compactRounds[0]?.filterTarget || null,
+    insightTarget: compactRounds[0]?.insightTarget || null,
     randomization: {
-      contentPool: "expanded_v2_in_app_js",
+      contentPool: "expanded_v3_two_rounds_in_app_js",
       avoidsRecentLocalTargets: true,
-      recentWindow: RECENT_TARGET_LIMIT
+      recentWindow: RECENT_TARGET_LIMIT,
+      roundsGeneratedUpfront: true
     },
     gestureTasks: ["pots_drag_amount", "insights_swipe_cards", "secure_approval"]
   };
 }
 
-function generateSessionContent() {
+function buildSessionTaskPlan(roundCount) {
+  const tasks = [];
+  for (let roundIndex = 0; roundIndex < roundCount; roundIndex += 1) {
+    GUIDED_TASKS.forEach((task, baseTaskIndex) => {
+      tasks.push({
+        ...task,
+        baseId: task.id,
+        id: `${task.id}_r${roundIndex + 1}`,
+        roundIndex,
+        roundNumber: roundIndex + 1,
+        baseTaskIndex,
+        globalTaskIndex: tasks.length
+      });
+    });
+  }
+  return tasks;
+}
+
+function generateSessionRounds(count) {
+  const rounds = [];
+  for (let i = 0; i < count; i += 1) rounds.push(generateRoundContent(i));
+  return rounds;
+}
+
+function generateRoundContent(roundIndex = 0) {
   extendBankingLibrary();
 
   const recent = readRecentTargets();
@@ -326,7 +380,7 @@ function generateSessionContent() {
     ...baseTarget,
     when: targetWhen,
     isTarget: true,
-    id: `target_${slugify(baseTarget.merchant)}_${slugify(targetWhen)}_${Date.now().toString(36)}`
+    id: `target_r${roundIndex + 1}_${slugify(baseTarget.merchant)}_${slugify(targetWhen)}_${Date.now().toString(36)}`
   };
 
   const insightPool = buildInsightOptions();
@@ -336,6 +390,8 @@ function generateSessionContent() {
   const transferAmount = randomChoice(BANKING_LIBRARY.transferAmounts);
 
   const content = {
+    roundIndex,
+    roundNumber: roundIndex + 1,
     code: randomChoice(BANKING_LIBRARY.codes),
     target,
     targetItem: target,
@@ -362,6 +418,7 @@ function generateSessionContent() {
     spendingCardTargetId: spendingCardTarget.id,
     insightTargetId: insightTarget.id,
     approvalMerchant: approvalPayment.merchant,
+    roundIndex,
     createdAt: new Date().toISOString()
   });
 
@@ -456,8 +513,7 @@ function buildLongFeed(target) {
   const insertRatio = 0.55 + Math.random() * 0.3;
   feed.splice(Math.floor(feed.length * insertRatio), 0, target);
   return feed;
-}
-
+}\n
 function placeTargetLow(items, isTarget) {
   const copy = [...items];
   const targetIndex = copy.findIndex(isTarget);
@@ -472,29 +528,44 @@ function goToTask(index) {
     logTaskEnd(window.currentTask, state.currentTaskIndex, getEvidence(window.currentTask.id));
     state.completedTasks.add(window.currentTask.id);
   }
+
   state.currentTaskIndex = index;
   window.currentTaskIndex = index;
-  window.currentTask = GUIDED_TASKS[index] || null;
-  if (!window.currentTask) {
+  const nextTask = state.sessionTasks[index] || null;
+  window.currentTask = nextTask;
+
+  if (!nextTask) {
     renderCompletion();
     return;
   }
-  state.activeArea = window.currentTask.area === "finish" ? "secure" : window.currentTask.area;
+
+  if (state.roundIndex !== nextTask.roundIndex) activateRound(nextTask.roundIndex);
+  state.activeArea = nextTask.area === "finish" ? "secure" : nextTask.area;
   window.currentActiveArea = state.activeArea;
-  ensureEvidence(window.currentTask.id);
-  logTaskStart(window.currentTask, index);
-  if (window.currentTask.type === "code") renderCode();
+  ensureEvidence(nextTask.id);
+  logTaskStart(nextTask, index);
+  if (nextTask.type === "code") renderCode();
   else renderBankShell();
+}
+
+function activateRound(roundIndex) {
+  state.roundIndex = roundIndex;
+  state.content = state.rounds[roundIndex];
+  state.selectedTransaction = null;
+  state.reviewedInsights = new Set();
+  state.codeInput = "";
+  window.currentRoundIndex = roundIndex;
+  logEvent("round_start", { roundIndex, roundNumber: roundIndex + 1, roundCount: state.rounds.length });
 }
 
 function renderCode() {
   resetScreenListeners();
-  window.currentScreenId = "secure_code";
+  window.currentScreenId = `secure_code_r${state.roundIndex + 1}`;
   window.currentActiveArea = "secure";
-  app.innerHTML = `<section class="passcode-screen"><div class="passcode-card"><div class="lock-badge">Lock</div><p class="eyebrow">Secure login</p><h1>Enter demo passcode</h1><p class="muted">Copy the passcode below.</p><div class="demo-code">${escapeHtml(state.content.code)}</div><div class="pass-dots">${renderCodeDotsMarkup()}</div><div class="keypad" data-component-id="code_keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, "Back", 0, "Clear"].map((key) => `<button class="keypad-btn" type="button" data-key="${escapeAttr(String(key))}" data-component-id="code_key_${escapeAttr(String(key))}">${escapeHtml(String(key))}</button>`).join("")}</div><div id="codeWarning" class="task-warning" hidden></div></div></section>`;
+  app.innerHTML = `<section class="passcode-screen"><div class="passcode-card"><div class="lock-badge">Lock</div><p class="eyebrow">Secure login · Round ${state.roundIndex + 1} of ${state.rounds.length}</p><h1>Enter demo passcode</h1><p class="muted">Copy the passcode below.</p><div class="demo-code">${escapeHtml(state.content.code)}</div><div class="pass-dots">${renderCodeDotsMarkup()}</div><div class="keypad" data-component-id="code_keypad">${[1, 2, 3, 4, 5, 6, 7, 8, 9, "Back", 0, "Clear"].map((key) => `<button class="keypad-btn" type="button" data-key="${escapeAttr(String(key))}" data-component-id="code_key_${escapeAttr(String(key))}">${escapeHtml(String(key))}</button>`).join("")}</div><div id="codeWarning" class="task-warning" hidden></div></div></section>`;
   attachTaskElementLogging(document);
   document.querySelectorAll(".keypad-btn").forEach((button) => addScreenListener(button, "click", () => handleCodeKey(button.dataset.key)));
-  logEvent("screen_view", { screenId: "secure_code", taskId: window.currentTask.id, area: "secure" });
+  logEvent("screen_view", { screenId: "secure_code", taskId: window.currentTask.id, baseTaskId: baseTaskId(window.currentTask), roundIndex: state.roundIndex, area: "secure" });
 }
 
 function handleCodeKey(key) {
@@ -508,7 +579,8 @@ function handleCodeKey(key) {
     keyClass: /^\d$/.test(key) ? "DIGIT" : "CONTROL",
     inputLengthBefore: before,
     inputLengthAfter: after,
-    deltaLength: after - before
+    deltaLength: after - before,
+    roundIndex: state.roundIndex
   });
   updateEvidence("unlock_code", {
     inputLength: after,
@@ -518,7 +590,7 @@ function handleCodeKey(key) {
   renderCodeDots();
   if (state.codeInput.length === 4 && state.codeInput === state.content.code) {
     updateEvidence("unlock_code", { completedWithCorrectCode: true });
-    setTimeout(() => goToTask(1), 200);
+    setTimeout(() => goToTask(state.currentTaskIndex + 1), 200);
   } else if (state.codeInput.length === 4) {
     const warning = document.getElementById("codeWarning");
     warning.textContent = "That did not match the demo passcode. Clear and try again.";
@@ -540,17 +612,17 @@ function renderBankShell() {
   const task = window.currentTask;
   window.currentActiveArea = state.activeArea;
   window.currentScreenId = `${state.activeArea}_${task.id}`;
-  app.innerHTML = `<section class="bank-screen"><header class="bank-header"><div><p class="eyebrow">Bank app</p><h1>${escapeHtml(headingForArea(state.activeArea))}</h1></div><button class="avatar" type="button" data-component-id="profile_button">${escapeHtml(state.identity?.participantId?.slice(1, 3) || "ID")}</button></header>${renderTaskBanner(task)}<div class="bank-content">${renderActiveArea()}</div><div id="taskWarning" class="task-warning" hidden></div><div class="sticky-stack"><button class="primary-btn" type="button" data-component-id="continue_button" id="continueBtn">Continue</button>${renderBottomNav()}</div></section>`;
+  app.innerHTML = `<section class="bank-screen"><header class="bank-header"><div><p class="eyebrow">Bank app · Round ${state.roundIndex + 1} of ${state.rounds.length}</p><h1>${escapeHtml(headingForArea(state.activeArea))}</h1></div><button class="avatar" type="button" data-component-id="profile_button">${escapeHtml(state.identity?.participantId?.slice(1, 3) || "ID")}</button></header>${renderTaskBanner(task)}<div class="bank-content">${renderActiveArea()}</div><div id="taskWarning" class="task-warning" hidden></div><div class="sticky-stack"><button class="primary-btn" type="button" data-component-id="continue_button" id="continueBtn">Continue</button>${renderBottomNav()}</div></section>`;
   attachTaskElementLogging(document);
   bindAreaHandlers();
   addScreenListener(document.getElementById("continueBtn"), "click", attemptContinue);
   observeBottomStack();
-  logEvent("screen_view", { screenId: window.currentScreenId, taskId: task.id, area: state.activeArea });
+  logEvent("screen_view", { screenId: window.currentScreenId, taskId: task.id, baseTaskId: baseTaskId(task), roundIndex: state.roundIndex, area: state.activeArea });
 }
 
 function renderTaskBanner(task) {
   const tabLabel = headingForArea(task.area === "finish" ? "secure" : task.area);
-  return `<div class="task-banner" role="status" aria-live="polite"><div><p>Task ${state.currentTaskIndex + 1} of ${GUIDED_TASKS.length} · Go to ${escapeHtml(tabLabel)}</p><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(instructionForTask(task))}</span></div><div class="progress-ring">${Math.round(((state.currentTaskIndex + 1) / GUIDED_TASKS.length) * 100)}%</div></div>`;
+  return `<div class="task-banner" role="status" aria-live="polite"><div><p>Round ${task.roundNumber} of ${state.rounds.length} · Task ${state.currentTaskIndex + 1} of ${state.sessionTasks.length} · Go to ${escapeHtml(tabLabel)}</p><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(instructionForTask(task))}</span></div><div class="progress-ring">${Math.round(((state.currentTaskIndex + 1) / state.sessionTasks.length) * 100)}%</div></div>`;
 }
 
 function renderBottomNav() {
@@ -562,7 +634,7 @@ function bindAreaHandlers() {
     addScreenListener(button, "click", () => {
       state.activeArea = button.dataset.area;
       window.currentActiveArea = state.activeArea;
-      logEvent("nav_tab_clicked", { componentId: button.dataset.componentId, area: state.activeArea });
+      logEvent("nav_tab_clicked", { componentId: button.dataset.componentId, area: state.activeArea, roundIndex: state.roundIndex });
       renderBankShell();
     });
   });
@@ -580,22 +652,23 @@ function headingForArea(area) {
 function instructionForTask(task) {
   const target = state.content.target;
   const cardTitle = state.content.spendingCardTarget?.title || "Travel";
-  return {
-    home_balance_check: "Open Home and tap Current Account after checking the balance.",
-    home_explore_cards: "Open Home and tap each account card once.",
-    activity_search: `Open Activity, type ${target.merchant}, then select it from the merchant list.`,
-    activity_filter_review: `Open Activity and select the ${state.content.filterTarget} filter chip.`,
-    activity_scroll_select: `Open Activity and find the one ${target.merchant} payment from ${target.when}.`,
-    transaction_category: `Open Activity and choose the ${target.category} category for the selected payment.`,
-    transaction_note: `Open Activity and copy the note: ${target.note}`,
-    pots_drag_amount: `Open Pots and drag the amount slider to GBP ${state.content.transferAmount}.`,
-    pots_transfer: `Open Pots, select Travel Pot, type ${state.content.transferAmount}, then confirm.`,
-    insights_swipe_cards: `Open Insights, scroll the spending cards horizontally, then select ${cardTitle}.`,
-    insights_review: `Open Insights and select the ${state.content.insightTarget.title} insight.`,
-    secure_approval: `Open Secure and approve ${state.content.approvalPayment.merchant} for ${state.content.approvalPayment.amount}.`,
-    secure_reply: `Open Secure and copy: ${target.reply}`,
-    finish_feeling: "Choose how the review felt."
-  }[task.id] || task.title;
+  switch (baseTaskId(task)) {
+    case "home_balance_check": return "Open Home and tap Current Account after checking the balance.";
+    case "home_explore_cards": return "Open Home and tap each account card once.";
+    case "activity_search": return `Open Activity, type ${target.merchant}, then select it from the merchant list.`;
+    case "activity_filter_review": return `Open Activity and select the ${state.content.filterTarget} filter chip.`;
+    case "activity_scroll_select": return `Open Activity and find the one ${target.merchant} payment from ${target.when}.`;
+    case "transaction_category": return `Open Activity and choose the ${target.category} category for the selected payment.`;
+    case "transaction_note": return `Open Activity and copy the note: ${target.note}`;
+    case "pots_drag_amount": return `Open Pots and drag the amount slider to GBP ${state.content.transferAmount}.`;
+    case "pots_transfer": return `Open Pots, select Travel Pot, type ${state.content.transferAmount}, then confirm.`;
+    case "insights_swipe_cards": return `Open Insights, scroll the spending cards horizontally, then select ${cardTitle}.`;
+    case "insights_review": return `Open Insights and select the ${state.content.insightTarget.title} insight.`;
+    case "secure_approval": return `Open Secure and approve ${state.content.approvalPayment.merchant} for ${state.content.approvalPayment.amount}.`;
+    case "secure_reply": return `Open Secure and copy: ${target.reply}`;
+    case "finish_feeling": return state.roundIndex + 1 < state.rounds.length ? "Choose how this round felt. A second round will start next." : "Choose how the full review felt.";
+    default: return task.title;
+  }
 }
 
 function renderActiveArea() {
@@ -655,9 +728,7 @@ function renderTransactionRow(item) {
 
 function renderTransactionDetail(showNote) {
   const transaction = state.selectedTransaction || state.content.targetItem;
-  if (showNote) {
-    return `${renderTransactionDetailCard(transaction)}<div class="section-card"><p class="muted">Copy this payment note</p><h2>${escapeHtml(state.content.target.note)}</h2><textarea id="noteInput" data-component-id="payment_note_input" class="text-area" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Copy note here"></textarea></div>`;
-  }
+  if (showNote) return `${renderTransactionDetailCard(transaction)}<div class="section-card"><p class="muted">Copy this payment note</p><h2>${escapeHtml(state.content.target.note)}</h2><textarea id="noteInput" data-component-id="payment_note_input" class="text-area" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Copy note here"></textarea></div>`;
   return `${renderTransactionDetailCard(transaction)}<div class="section-card"><p class="muted">Choose the best category</p><h2>${escapeHtml(state.content.target.category)}</h2></div><div class="transaction-feed option-list" data-log-scroll="true" data-component-id="category_option_list">${state.content.categoryOptions.map((category) => `<button class="txn-row category-option" type="button" data-category="${escapeAttr(category)}" data-component-id="category_${slugify(category)}"><span class="txn-icon">${escapeHtml(category.slice(0, 2).toUpperCase())}</span><span class="txn-main"><strong>${escapeHtml(category)}</strong><small>Payment category</small></span><span class="txn-amount">Select</span></button>`).join("")}</div>`;
 }
 
@@ -717,24 +788,18 @@ function renderSecureReply() {
 }
 
 function renderFinish() {
-  return `<div class="finish-card"><span class="large-emoji">Done</span><h2>Review complete</h2><p class="muted">How did this review feel?</p><div class="chip-grid feeling-grid">${BANKING_LIBRARY.feelings.map((feeling) => `<button class="feeling-chip" type="button" data-feeling="${escapeAttr(feeling)}" data-component-id="feeling_${slugify(feeling)}">${escapeHtml(feeling)}</button>`).join("")}</div></div>`;
+  const prompt = state.roundIndex + 1 < state.rounds.length ? "How did this round feel?" : "How did the full review feel?";
+  return `<div class="finish-card"><span class="large-emoji">Done</span><h2>Round ${state.roundIndex + 1} complete</h2><p class="muted">${escapeHtml(prompt)}</p><div class="chip-grid feeling-grid">${BANKING_LIBRARY.feelings.map((feeling) => `<button class="feeling-chip" type="button" data-feeling="${escapeAttr(feeling)}" data-component-id="feeling_${slugify(feeling)}">${escapeHtml(feeling)}</button>`).join("")}</div></div>`;
 }
 
 function bindHomeHandlers() {
   document.querySelectorAll(".account-card").forEach((card) => addScreenListener(card, "click", () => {
     card.classList.add("selected");
-    updateEvidence("home_balance_check", {
-      accountReviewed: card.dataset.accountId === "current",
-      selectedAccount: card.dataset.accountId
-    });
+    updateEvidence("home_balance_check", { accountReviewed: card.dataset.accountId === "current", selectedAccount: card.dataset.accountId });
     const explored = new Set(getEvidence("home_explore_cards").exploredAccounts || []);
     explored.add(card.dataset.accountId);
-    updateEvidence("home_explore_cards", {
-      exploredAccounts: [...explored],
-      exploredCount: explored.size,
-      allAccountsExplored: explored.size >= state.content.accounts.length
-    });
-    logEvent("account_card_selected", { componentId: card.dataset.componentId, accountId: card.dataset.accountId });
+    updateEvidence("home_explore_cards", { exploredAccounts: [...explored], exploredCount: explored.size, allAccountsExplored: explored.size >= state.content.accounts.length });
+    logEvent("account_card_selected", { componentId: card.dataset.componentId, accountId: card.dataset.accountId, roundIndex: state.roundIndex });
   }));
 }
 
@@ -753,7 +818,7 @@ function bindActivityHandlers() {
       option.classList.add("selected");
       const isTarget = option.dataset.merchant === state.content.target.merchant;
       updateEvidence(task.id, { merchantOptionSelected: isTarget, selectedMerchant: option.dataset.merchant });
-      logEvent("merchant_option_selected", { componentId: option.dataset.componentId, selectedTargetMerchant: isTarget });
+      logEvent("merchant_option_selected", { componentId: option.dataset.componentId, selectedTargetMerchant: isTarget, roundIndex: state.roundIndex });
     }));
   }
 
@@ -763,7 +828,7 @@ function bindActivityHandlers() {
       chip.classList.add("selected");
       const correctFilter = chip.dataset.filter === state.content.filterTarget;
       updateEvidence(task.id, { filterSelected: chip.dataset.filter, correctFilter });
-      logEvent("activity_filter_selected", { componentId: chip.dataset.componentId, filter: chip.dataset.filter, correctFilter });
+      logEvent("activity_filter_selected", { componentId: chip.dataset.componentId, filter: chip.dataset.filter, correctFilter, roundIndex: state.roundIndex });
     }));
   }
 
@@ -773,18 +838,8 @@ function bindActivityHandlers() {
     state.selectedTransaction = selected;
     document.querySelectorAll(".txn-row").forEach((item) => item.classList.remove("selected"));
     row.classList.add("selected");
-    updateEvidence("activity_scroll_select", {
-      selectedTarget: !!selected.isTarget,
-      selectedMerchant: selected.merchant,
-      selectedWhen: selected.when,
-      selectedAmount: selected.amount
-    });
-    logEvent("transaction_selected", {
-      componentId: row.dataset.componentId,
-      selectedTarget: !!selected.isTarget,
-      merchant: selected.merchant,
-      when: selected.when
-    });
+    updateEvidence("activity_scroll_select", { selectedTarget: !!selected.isTarget, selectedMerchant: selected.merchant, selectedWhen: selected.when, selectedAmount: selected.amount });
+    logEvent("transaction_selected", { componentId: row.dataset.componentId, selectedTarget: !!selected.isTarget, merchant: selected.merchant, when: selected.when, roundIndex: state.roundIndex });
   }));
 
   if (task.type === "categorise") {
@@ -793,7 +848,7 @@ function bindActivityHandlers() {
       option.classList.add("selected");
       const category = option.dataset.category;
       updateEvidence(task.id, { categorySelected: true, category, correctCategory: category === state.content.target.category });
-      logEvent("category_selected", { componentId: option.dataset.componentId, category, correctCategory: category === state.content.target.category });
+      logEvent("category_selected", { componentId: option.dataset.componentId, category, correctCategory: category === state.content.target.category, roundIndex: state.roundIndex });
     }));
   }
 
@@ -806,17 +861,15 @@ function bindPotsHandlers() {
     document.querySelectorAll(".pot-card").forEach((item) => item.classList.remove("selected"));
     pot.classList.add("selected");
     updateEvidence("pots_transfer", { potSelected: pot.dataset.potId, travelPotSelected: pot.dataset.potId === "travel" });
-    logEvent("pot_selected", { componentId: pot.dataset.componentId, potId: pot.dataset.potId });
+    logEvent("pot_selected", { componentId: pot.dataset.componentId, potId: pot.dataset.potId, roundIndex: state.roundIndex });
   }));
-
   if (task.type === "pot_drag") bindPotDrag();
-
   if (task.type === "pots_transfer") {
     bindTypingTask(task, document.getElementById("potAmountInput"), state.content.transferAmount);
     const moveButton = document.getElementById("moveMoneyBtn");
     addScreenListener(moveButton, "click", () => {
       updateEvidence(task.id, { moveConfirmed: true, amountLength: document.getElementById("potAmountInput")?.value.length || 0 });
-      logEvent("pot_transfer_confirmed", { componentId: "move_money_button" });
+      logEvent("pot_transfer_confirmed", { componentId: "move_money_button", roundIndex: state.roundIndex });
       moveButton.textContent = "Money moved";
       moveButton.classList.add("confirmed", "selected");
     });
@@ -831,64 +884,29 @@ function bindInsightsHandlers() {
     const id = card.dataset.insightId;
     state.reviewedInsights.add(id);
     card.classList.add("selected");
-    updateEvidence("insights_review", {
-      targetInsightTapped: id === state.content.insightTarget.id,
-      selectedInsight: id,
-      reviewedCount: state.reviewedInsights.size
-    });
-    logEvent("insight_card_selected", {
-      componentId: card.dataset.componentId,
-      isTargetInsight: id === state.content.insightTarget.id,
-      reviewedCount: state.reviewedInsights.size
-    });
+    updateEvidence("insights_review", { targetInsightTapped: id === state.content.insightTarget.id, selectedInsight: id, reviewedCount: state.reviewedInsights.size });
+    logEvent("insight_card_selected", { componentId: card.dataset.componentId, isTargetInsight: id === state.content.insightTarget.id, reviewedCount: state.reviewedInsights.size, roundIndex: state.roundIndex });
   }));
 }
 
 function bindCardCarouselHandlers() {
   const carousel = document.querySelector(".swipe-carousel");
   if (!carousel) return;
-
   const targetId = state.content.spendingCardTarget?.id || "travel";
   bindHorizontalScrollEvidence(carousel, "insights_swipe_cards", "carouselMaxScrollLeft");
 
   requestAnimationFrame(() => {
     carousel.scrollLeft = 0;
-    updateEvidence("insights_swipe_cards", {
-      carouselResetToStart: true,
-      swiped: false,
-      targetCardSelected: false,
-      selectedCard: null,
-      targetCardId: targetId,
-      targetCardTitle: state.content.spendingCardTarget?.title || "Travel"
-    });
+    updateEvidence("insights_swipe_cards", { carouselResetToStart: true, swiped: false, targetCardSelected: false, selectedCard: null, targetCardId: targetId, targetCardTitle: state.content.spendingCardTarget?.title || "Travel" });
   });
 
   let gesture = null;
   let lastSummaryAt = 0;
   const supportsPointer = "PointerEvent" in window;
-
   const start = (event, source) => {
-    gesture = {
-      source,
-      startX: event.clientX,
-      startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      startTime: performance.now(),
-      pathLengthPx: 0,
-      samples: 0,
-      maxAbsDx: 0,
-      maxAbsDy: 0
-    };
-    logEvent("card_swipe_start", {
-      componentId: "spending_card_carousel",
-      source,
-      targetCardId: targetId,
-      x: roundLocal(event.clientX),
-      y: roundLocal(event.clientY)
-    });
+    gesture = { source, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, startTime: performance.now(), pathLengthPx: 0, samples: 0, maxAbsDx: 0, maxAbsDy: 0 };
+    logEvent("card_swipe_start", { componentId: "spending_card_carousel", source, targetCardId: targetId, x: roundLocal(event.clientX), y: roundLocal(event.clientY), roundIndex: state.roundIndex });
   };
-
   const move = (event) => {
     if (!gesture) return;
     const dxStep = event.clientX - gesture.lastX;
@@ -902,7 +920,6 @@ function bindCardCarouselHandlers() {
     gesture.maxAbsDx = Math.max(gesture.maxAbsDx, Math.abs(dx));
     gesture.maxAbsDy = Math.max(gesture.maxAbsDy, Math.abs(dy));
   };
-
   const finish = (event, reason) => {
     if (!gesture) return;
     move(event);
@@ -912,21 +929,7 @@ function bindCardCarouselHandlers() {
     const displacementPx = Math.hypot(dx, dy);
     const pathLengthPx = Math.max(displacementPx, gesture.pathLengthPx);
     const horizontalSwipe = Math.abs(dx) >= 25 || gesture.maxAbsDx >= 25 || carousel.scrollLeft > 20;
-    const summary = {
-      componentId: "spending_card_carousel",
-      source: gesture.source,
-      reason,
-      targetCardId: targetId,
-      dx: roundLocal(dx),
-      dy: roundLocal(dy),
-      durationMs: roundLocal(durationMs),
-      pathLengthPx: roundLocal(pathLengthPx),
-      meanSpeedPxPerMs: roundLocal(pathLengthPx / durationMs),
-      straightness: pathLengthPx > 0 ? roundLocal(displacementPx / pathLengthPx) : null,
-      samples: gesture.samples,
-      horizontalSwipe
-    };
-
+    const summary = { componentId: "spending_card_carousel", source: gesture.source, reason, targetCardId: targetId, dx: roundLocal(dx), dy: roundLocal(dy), durationMs: roundLocal(durationMs), pathLengthPx: roundLocal(pathLengthPx), meanSpeedPxPerMs: roundLocal(pathLengthPx / durationMs), straightness: pathLengthPx > 0 ? roundLocal(displacementPx / pathLengthPx) : null, samples: gesture.samples, horizontalSwipe, roundIndex: state.roundIndex };
     const existing = getEvidence("insights_swipe_cards");
     const usefulSummary = pathLengthPx > 1 || !existing.pathLengthPx;
     if (usefulSummary) updateEvidence("insights_swipe_cards", { swiped: horizontalSwipe, swipeDetectionMethod: gesture.source, ...summary });
@@ -954,39 +957,14 @@ function bindCardCarouselHandlers() {
     const liveScrollLeft = Math.max(carousel.scrollLeft || 0, evidence.carouselMaxScrollLeft || 0);
     if (!evidence.swiped && liveScrollLeft > 20 && performance.now() - lastSummaryAt > 120) recordCarouselMovementSummary("carousel_scroll", liveScrollLeft, null);
     const targetCardSelected = card.dataset.cardId === targetId;
-    updateEvidence("insights_swipe_cards", {
-      targetCardSelected,
-      selectedCard: card.dataset.cardId,
-      targetCardId: targetId,
-      carouselScrollLeftAtSelection: roundLocal(carousel.scrollLeft),
-      carouselMaxScrollLeftAtSelection: roundLocal(liveScrollLeft)
-    });
-    logEvent("spending_card_selected", {
-      componentId: card.dataset.componentId,
-      cardId: card.dataset.cardId,
-      targetCardId: targetId,
-      targetCardSelected,
-      carouselScrollLeft: roundLocal(carousel.scrollLeft),
-      carouselMaxScrollLeft: roundLocal(liveScrollLeft)
-    });
+    updateEvidence("insights_swipe_cards", { targetCardSelected, selectedCard: card.dataset.cardId, targetCardId: targetId, carouselScrollLeftAtSelection: roundLocal(carousel.scrollLeft), carouselMaxScrollLeftAtSelection: roundLocal(liveScrollLeft) });
+    logEvent("spending_card_selected", { componentId: card.dataset.componentId, cardId: card.dataset.cardId, targetCardId: targetId, targetCardSelected, carouselScrollLeft: roundLocal(carousel.scrollLeft), carouselMaxScrollLeft: roundLocal(liveScrollLeft), roundIndex: state.roundIndex });
   }));
 }
 
 function recordCarouselMovementSummary(source, dx, durationMs) {
   const pathLengthPx = Math.abs(Number(dx) || 0);
-  const summary = {
-    componentId: "spending_card_carousel",
-    source,
-    reason: "scroll_before_selection",
-    dx: roundLocal(dx),
-    dy: 0,
-    durationMs: durationMs == null ? null : roundLocal(durationMs),
-    pathLengthPx: roundLocal(pathLengthPx),
-    meanSpeedPxPerMs: durationMs ? roundLocal(pathLengthPx / durationMs) : null,
-    straightness: pathLengthPx > 0 ? 1 : null,
-    samples: null,
-    horizontalSwipe: pathLengthPx > 20
-  };
+  const summary = { componentId: "spending_card_carousel", source, reason: "scroll_before_selection", dx: roundLocal(dx), dy: 0, durationMs: durationMs == null ? null : roundLocal(durationMs), pathLengthPx: roundLocal(pathLengthPx), meanSpeedPxPerMs: durationMs ? roundLocal(pathLengthPx / durationMs) : null, straightness: pathLengthPx > 0 ? 1 : null, samples: null, horizontalSwipe: pathLengthPx > 20, roundIndex: state.roundIndex };
   updateEvidence("insights_swipe_cards", { swiped: pathLengthPx > 20, swipeDetectionMethod: source, ...summary });
   logEvent("card_swipe_summary", summary);
 }
@@ -1000,7 +978,7 @@ function bindSecureHandlers() {
       document.querySelectorAll(".feeling-chip").forEach((item) => item.classList.remove("selected"));
       button.classList.add("selected");
       updateEvidence(task.id, { finalFeelingSelected: true, feeling: button.dataset.feeling });
-      logEvent("final_feeling_selected", { componentId: button.dataset.componentId, feeling: button.dataset.feeling });
+      logEvent("final_feeling_selected", { componentId: button.dataset.componentId, feeling: button.dataset.feeling, roundIndex: state.roundIndex });
       setTimeout(() => goToTask(state.currentTaskIndex + 1), 160);
     }));
   }
@@ -1014,38 +992,20 @@ function bindTypingTask(task, input, target) {
     const deltaLength = inputLength - previousLength;
     previousLength = inputLength;
     const exactMatch = normaliseForValidation(input.value) === normaliseForValidation(target);
-    updateEvidence(task.id, {
-      inputLength,
-      targetLength: target.length,
-      deltaLengthLast: deltaLength,
-      corrections: (getEvidence(task.id).corrections || 0) + (deltaLength < 0 ? 1 : 0),
-      completedLength: inputLength >= target.length,
-      exactMatch,
-      exactCaseSensitiveMatch: input.value === target,
-      validationMode: "case_insensitive_trimmed"
-    });
+    updateEvidence(task.id, { inputLength, targetLength: target.length, deltaLengthLast: deltaLength, corrections: (getEvidence(task.id).corrections || 0) + (deltaLength < 0 ? 1 : 0), completedLength: inputLength >= target.length, exactMatch, exactCaseSensitiveMatch: input.value === target, validationMode: "case_insensitive_trimmed" });
   });
 }
 
 function bindScrollEvidence(componentId, taskId, field) {
   const element = document.querySelector(`[data-component-id='${componentId}']`);
   if (!element) return;
-  addScreenListener(element, "scroll", () => {
-    updateScrollEvidenceFromCurrentGeometry(taskId, field, element.scrollTop, element.scrollHeight - element.clientHeight);
-  }, { passive: true });
+  addScreenListener(element, "scroll", () => updateScrollEvidenceFromCurrentGeometry(taskId, field, element.scrollTop, element.scrollHeight - element.clientHeight), { passive: true });
 }
 
 function bindHorizontalScrollEvidence(element, taskId, field) {
   addScreenListener(element, "scroll", () => {
     const evidence = updateScrollEvidenceFromCurrentGeometry(taskId, field, element.scrollLeft, element.scrollWidth - element.clientWidth);
-    logEvent("carousel_scroll", {
-      componentId: element.dataset.componentId,
-      scrollLeft: roundLocal(element.scrollLeft),
-      maxScrollLeft: roundLocal(evidence[field]),
-      scrollLeftRatio: roundLocal(evidence[`${field}CurrentRatio`]),
-      maxScrollLeftRatio: roundLocal(evidence[`${field}Ratio`]),
-      scrollGeometryChanged: evidence[`${field}ScrollGeometryChanged`]
-    });
+    logEvent("carousel_scroll", { componentId: element.dataset.componentId, scrollLeft: roundLocal(element.scrollLeft), maxScrollLeft: roundLocal(evidence[field]), scrollLeftRatio: roundLocal(evidence[`${field}CurrentRatio`]), maxScrollLeftRatio: roundLocal(evidence[`${field}Ratio`]), scrollGeometryChanged: evidence[`${field}ScrollGeometryChanged`], roundIndex: state.roundIndex });
   }, { passive: true });
 }
 
@@ -1059,21 +1019,8 @@ function updateScrollEvidenceFromCurrentGeometry(taskId, field, rawScrollValue, 
   const previousMaxRatio = Number(evidence[`${field}Ratio`] || 0);
   const previousMaxScrollValue = Number(evidence[field] || 0);
   const historicalMaxAgainstCurrentRatioRaw = maxPossibleCurrent > 0 ? Math.max(previousMaxScrollValue, scrollValue) / maxPossibleCurrent : 0;
-  const geometryChanged = Boolean(evidence[`${field}ScrollGeometryChanged`]) ||
-    (previousMaxPossible > 0 && Math.abs(previousMaxPossible - maxPossibleCurrent) > 2) ||
-    historicalMaxAgainstCurrentRatioRaw > 1.0001;
-
-  updateEvidence(taskId, {
-    [field]: Math.max(previousMaxScrollValue, scrollValue),
-    [`${field}Current`]: roundLocal(scrollValue),
-    [`${field}MaxPossibleCurrent`]: roundLocal(maxPossibleCurrent),
-    [`${field}MaxPossibleObserved`]: roundLocal(Math.max(previousMaxPossible, maxPossibleCurrent)),
-    [`${field}Ratio`]: Math.max(previousMaxRatio, currentRatio),
-    [`${field}CurrentRatio`]: currentRatio,
-    [`${field}RatioRaw`]: currentRatioRaw,
-    [`${field}HistoricalMaxAgainstCurrentRatioRaw`]: historicalMaxAgainstCurrentRatioRaw,
-    [`${field}ScrollGeometryChanged`]: geometryChanged
-  });
+  const geometryChanged = Boolean(evidence[`${field}ScrollGeometryChanged`]) || (previousMaxPossible > 0 && Math.abs(previousMaxPossible - maxPossibleCurrent) > 2) || historicalMaxAgainstCurrentRatioRaw > 1.0001;
+  updateEvidence(taskId, { [field]: Math.max(previousMaxScrollValue, scrollValue), [`${field}Current`]: roundLocal(scrollValue), [`${field}MaxPossibleCurrent`]: roundLocal(maxPossibleCurrent), [`${field}MaxPossibleObserved`]: roundLocal(Math.max(previousMaxPossible, maxPossibleCurrent)), [`${field}Ratio`]: Math.max(previousMaxRatio, currentRatio), [`${field}CurrentRatio`]: currentRatio, [`${field}RatioRaw`]: currentRatioRaw, [`${field}HistoricalMaxAgainstCurrentRatioRaw`]: historicalMaxAgainstCurrentRatioRaw, [`${field}ScrollGeometryChanged`]: geometryChanged });
   return getEvidence(taskId);
 }
 
@@ -1086,35 +1033,12 @@ function bindPotDrag() {
     fill.style.width = `${ratio * 100}%`;
     thumb.style.left = `${ratio * 100}%`;
     thumb.textContent = `GBP ${value}`;
-    updateEvidence("pots_drag_amount", {
-      currentRatio: ratio,
-      currentValue: value,
-      targetValue: state.content.transferAmount,
-      withinTolerance: Math.abs(Number(value) - Number(state.content.transferAmount)) <= 1,
-      dragSamples: meta.samples,
-      dragDistancePx: meta.distancePx
-    });
+    updateEvidence("pots_drag_amount", { currentRatio: ratio, currentValue: value, targetValue: state.content.transferAmount, withinTolerance: Math.abs(Number(value) - Number(state.content.transferAmount)) <= 1, dragSamples: meta.samples, dragDistancePx: meta.distancePx });
   }, (ratio, meta) => {
     const value = String(Math.round(ratio * 12));
     const correctRelease = Math.abs(Number(value) - Number(state.content.transferAmount)) <= 1;
-    updateEvidence("pots_drag_amount", {
-      released: true,
-      releasedRatio: ratio,
-      releasedValue: value,
-      targetValue: state.content.transferAmount,
-      correctRelease,
-      dragSamples: meta.samples,
-      dragDistancePx: meta.distancePx,
-      durationMs: meta.durationMs
-    });
-    logEvent("pot_drag_release", {
-      componentId: "pot_drag_thumb",
-      releasedValue: value,
-      targetValue: state.content.transferAmount,
-      correctRelease,
-      dragSamples: meta.samples,
-      durationMs: meta.durationMs
-    });
+    updateEvidence("pots_drag_amount", { released: true, releasedRatio: ratio, releasedValue: value, targetValue: state.content.transferAmount, correctRelease, dragSamples: meta.samples, dragDistancePx: meta.distancePx, durationMs: meta.durationMs });
+    logEvent("pot_drag_release", { componentId: "pot_drag_thumb", releasedValue: value, targetValue: state.content.transferAmount, correctRelease, dragSamples: meta.samples, durationMs: meta.durationMs, roundIndex: state.roundIndex });
   });
 }
 
@@ -1127,27 +1051,12 @@ function bindApprovalSwipe() {
   }, (ratio, meta) => {
     const approved = ratio > 0.78;
     thumb.style.left = approved ? "100%" : "0%";
-    updateEvidence("secure_approval", {
-      approvalSelected: approved,
-      action: approved ? "Approve" : null,
-      expectedAction: "Approve",
-      correctAction: approved,
-      swipeRatio: ratio,
-      swipeSamples: meta.samples,
-      durationMs: meta.durationMs,
-      dragDistancePx: meta.distancePx
-    });
-    logEvent("approval_swipe_release", {
-      componentId: "approval_swipe_thumb",
-      swipeRatio: ratio,
-      approved,
-      swipeSamples: meta.samples,
-      durationMs: meta.durationMs
-    });
+    updateEvidence("secure_approval", { approvalSelected: approved, action: approved ? "Approve" : null, expectedAction: "Approve", correctAction: approved, swipeRatio: ratio, swipeSamples: meta.samples, durationMs: meta.durationMs, dragDistancePx: meta.distancePx });
+    logEvent("approval_swipe_release", { componentId: "approval_swipe_thumb", swipeRatio: ratio, approved, swipeSamples: meta.samples, durationMs: meta.durationMs, roundIndex: state.roundIndex });
   });
   addScreenListener(document.querySelector(".decline-link"), "click", () => {
     updateEvidence("secure_approval", { approvalSelected: true, action: "Decline", expectedAction: "Approve", correctAction: false });
-    logEvent("secure_approval_selected", { componentId: "approval_decline", action: "Decline", correctAction: false });
+    logEvent("secure_approval_selected", { componentId: "approval_decline", action: "Decline", correctAction: false, roundIndex: state.roundIndex });
   });
 }
 
@@ -1157,21 +1066,18 @@ function bindDragControl(track, thumb, onMove, onEnd) {
   let startTime = 0;
   let last = { x: 0, y: 0 };
   let meta = { samples: 0, distancePx: 0, durationMs: 0 };
-
   const ratioFromEvent = (event) => {
     const rect = track.getBoundingClientRect();
     return clamp01((event.clientX - rect.left) / rect.width);
   };
-
   const down = (event) => {
     active = true;
     startTime = performance.now();
     last = { x: event.clientX, y: event.clientY };
     meta = { samples: 0, distancePx: 0, durationMs: 0 };
     thumb.setPointerCapture?.(event.pointerId);
-    logEvent("gesture_drag_start", { componentId: thumb.dataset.componentId || null, x: event.clientX, y: event.clientY });
+    logEvent("gesture_drag_start", { componentId: thumb.dataset.componentId || null, x: event.clientX, y: event.clientY, roundIndex: state.roundIndex });
   };
-
   const move = (event) => {
     if (!active) return;
     const dx = event.clientX - last.x;
@@ -1181,31 +1087,17 @@ function bindDragControl(track, thumb, onMove, onEnd) {
     meta.durationMs = performance.now() - startTime;
     last = { x: event.clientX, y: event.clientY };
     const ratio = ratioFromEvent(event);
-    logEvent("gesture_drag_move", {
-      componentId: thumb.dataset.componentId || null,
-      ratio: roundLocal(ratio),
-      sampleIndex: meta.samples,
-      x: roundLocal(event.clientX),
-      y: roundLocal(event.clientY)
-    });
+    logEvent("gesture_drag_move", { componentId: thumb.dataset.componentId || null, ratio: roundLocal(ratio), sampleIndex: meta.samples, x: roundLocal(event.clientX), y: roundLocal(event.clientY), roundIndex: state.roundIndex });
     onMove(ratio, meta);
   };
-
   const up = (event) => {
     if (!active) return;
     active = false;
     meta.durationMs = performance.now() - startTime;
     const ratio = ratioFromEvent(event);
     onEnd(ratio, meta);
-    logEvent("gesture_drag_end", {
-      componentId: thumb.dataset.componentId || null,
-      ratio: roundLocal(ratio),
-      samples: meta.samples,
-      distancePx: roundLocal(meta.distancePx),
-      durationMs: roundLocal(meta.durationMs)
-    });
+    logEvent("gesture_drag_end", { componentId: thumb.dataset.componentId || null, ratio: roundLocal(ratio), samples: meta.samples, distancePx: roundLocal(meta.distancePx), durationMs: roundLocal(meta.durationMs), roundIndex: state.roundIndex });
   };
-
   addScreenListener(thumb, "pointerdown", down);
   addScreenListener(track, "pointerdown", down);
   addScreenListener(window, "pointermove", move, { passive: true });
@@ -1226,7 +1118,7 @@ function attemptContinue() {
 function validateTask(task) {
   const evidence = getEvidence(task.id);
   const cardTitle = state.content.spendingCardTarget?.title || "Travel";
-  switch (task.id) {
+  switch (baseTaskId(task)) {
     case "home_balance_check": return evidence.accountReviewed ? null : "Go to Home and tap Current Account.";
     case "home_explore_cards": return evidence.allAccountsExplored ? null : "Go to Home and tap each account card once.";
     case "activity_search": return evidence.exactMatch && evidence.merchantOptionSelected ? null : `Go to Activity, type ${state.content.searchTerm}, then select it.`;
@@ -1251,7 +1143,7 @@ function renderCompletion() {
   window.currentScreenId = "complete";
   completeSession();
   const session = getSession();
-  app.innerHTML = `<section class="intro-screen completion-screen"><div class="success-orb">OK</div><h1>Review complete</h1><p class="lead">Thanks - this session is ready for development review.</p><div class="summary-card"><div><span>Participant ID</span><strong>${escapeHtml(session.participantId)}</strong></div><div><span>Session</span><strong>${escapeHtml(String(session.sessionIndex))}</strong></div><div><span>Duration</span><strong>${Math.round((session.sessionDurationMs || 0) / 1000)}s</strong></div><div><span>Events</span><strong>${session.events.length}</strong></div></div>${APP_MODE === "debug" ? `<button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>` : `<p class="muted">Your session has been uploaded.</p>`}<button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button></section>`;
+  app.innerHTML = `<section class="intro-screen completion-screen"><div class="success-orb">OK</div><h1>Review complete</h1><p class="lead">Thanks - this two-round session is ready for development review.</p><div class="summary-card"><div><span>Participant ID</span><strong>${escapeHtml(session.participantId)}</strong></div><div><span>Session</span><strong>${escapeHtml(String(session.sessionIndex))}</strong></div><div><span>Duration</span><strong>${Math.round((session.sessionDurationMs || 0) / 1000)}s</strong></div><div><span>Events</span><strong>${session.events.length}</strong></div></div>${APP_MODE === "debug" ? `<button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>` : `<p class="muted">Your session has been uploaded.</p>`}<button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button></section>`;
   addScreenListener(document.getElementById("downloadJsonBtn"), "click", downloadSessionJson);
   addScreenListener(document.getElementById("startAnotherBtn"), "click", renderContext);
 }
@@ -1270,18 +1162,36 @@ function clearWarning() {
   warning.hidden = true;
 }
 
+function resolveTaskId(taskId) {
+  const raw = String(taskId || "");
+  if (/_r\d+$/.test(raw)) return raw;
+  if (Array.isArray(state.sessionTasks)) {
+    const match = state.sessionTasks.find((task) => task.baseId === raw && task.roundIndex === state.roundIndex);
+    if (match) return match.id;
+  }
+  return raw;
+}
+
+function baseTaskId(taskOrId) {
+  if (taskOrId && typeof taskOrId === "object") return taskOrId.baseId || String(taskOrId.id || "").replace(/_r\d+$/, "");
+  return String(taskOrId || "").replace(/_r\d+$/, "");
+}
+
 function ensureEvidence(taskId) {
-  if (!state.evidence[taskId]) state.evidence[taskId] = {};
+  const resolved = resolveTaskId(taskId);
+  if (!state.evidence[resolved]) state.evidence[resolved] = {};
 }
 
 function updateEvidence(taskId, patch) {
-  ensureEvidence(taskId);
-  state.evidence[taskId] = { ...state.evidence[taskId], ...patch };
+  const resolved = resolveTaskId(taskId);
+  ensureEvidence(resolved);
+  state.evidence[resolved] = { ...state.evidence[resolved], ...patch };
 }
 
 function getEvidence(taskId) {
-  ensureEvidence(taskId);
-  return state.evidence[taskId];
+  const resolved = resolveTaskId(taskId);
+  ensureEvidence(resolved);
+  return state.evidence[resolved];
 }
 
 function readRecentTargets() {
@@ -1298,9 +1208,7 @@ function rememberRecentTarget(entry) {
     const recent = readRecentTargets();
     recent.unshift(entry);
     localStorage.setItem(RECENT_TARGET_KEY, JSON.stringify(recent.slice(0, RECENT_TARGET_LIMIT)));
-  } catch (_) {
-    // Some private/restrictive browser modes can block storage. Randomisation still works for this session.
-  }
+  } catch (_) {}
 }
 
 function pickAvoidingRecent(items, recentValues, valueOf) {
