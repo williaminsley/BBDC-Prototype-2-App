@@ -1257,27 +1257,36 @@ function renderFinish() {
 }
 
 function bindHomeHandlers() {
+  const task = window.currentTask;
+  const activeBaseId = baseTaskId(task);
+
   document.querySelectorAll(".account-card").forEach((card) => {
     addScreenListener(card, "click", () => {
       card.classList.add("selected");
 
-      updateEvidence("home_balance_check", {
-        accountReviewed: card.dataset.accountId === "current",
-        selectedAccount: card.dataset.accountId
-      });
+      if (activeBaseId === "home_balance_check") {
+        updateEvidence(task.id, {
+          accountReviewed: card.dataset.accountId === "current",
+          selectedAccount: card.dataset.accountId
+        });
+      }
 
-      const explored = new Set(getEvidence("home_explore_cards").exploredAccounts || []);
-      explored.add(card.dataset.accountId);
+      if (activeBaseId === "home_explore_cards") {
+        const explored = new Set(getEvidence(task.id).exploredAccounts || []);
+        explored.add(card.dataset.accountId);
 
-      updateEvidence("home_explore_cards", {
-        exploredAccounts: [...explored],
-        exploredCount: explored.size,
-        allAccountsExplored: explored.size >= state.content.accounts.length
-      });
+        updateEvidence(task.id, {
+          exploredAccounts: [...explored],
+          exploredCount: explored.size,
+          allAccountsExplored: explored.size >= state.content.accounts.length
+        });
+      }
 
       logEvent("account_card_selected", {
         componentId: card.dataset.componentId,
         accountId: card.dataset.accountId,
+        activeTaskId: task?.id || null,
+        activeBaseTaskId: activeBaseId,
         contentSetIndex: state.contentSetIndex
       });
     });
@@ -1311,6 +1320,7 @@ function bindActivityHandlers() {
         logEvent("merchant_option_selected", {
           componentId: option.dataset.componentId,
           selectedTargetMerchant: isTarget,
+          activeTaskId: task.id,
           contentSetIndex: state.contentSetIndex
         });
       });
@@ -1334,6 +1344,7 @@ function bindActivityHandlers() {
           componentId: chip.dataset.componentId,
           filter: chip.dataset.filter,
           correctFilter,
+          activeTaskId: task.id,
           contentSetIndex: state.contentSetIndex
         });
       });
@@ -1349,18 +1360,22 @@ function bindActivityHandlers() {
       document.querySelectorAll(".txn-row").forEach((item) => item.classList.remove("selected"));
       row.classList.add("selected");
 
-      updateEvidence("activity_scroll_select", {
-        selectedTarget: !!selected.isTarget,
-        selectedMerchant: selected.merchant,
-        selectedWhen: selected.when,
-        selectedAmount: selected.amount
-      });
+      if (task.type === "transaction_feed") {
+        updateEvidence(task.id, {
+          selectedTarget: !!selected.isTarget,
+          selectedMerchant: selected.merchant,
+          selectedWhen: selected.when,
+          selectedAmount: selected.amount
+        });
+      }
 
       logEvent("transaction_selected", {
         componentId: row.dataset.componentId,
         selectedTarget: !!selected.isTarget,
         merchant: selected.merchant,
         when: selected.when,
+        activeTaskId: task.id,
+        activeTaskType: task.type,
         contentSetIndex: state.contentSetIndex
       });
     });
@@ -1384,6 +1399,7 @@ function bindActivityHandlers() {
           componentId: option.dataset.componentId,
           category,
           correctCategory: category === state.content.target.category,
+          activeTaskId: task.id,
           contentSetIndex: state.contentSetIndex
         });
       });
@@ -1403,20 +1419,24 @@ function bindPotsHandlers() {
       document.querySelectorAll(".pot-card").forEach((item) => item.classList.remove("selected"));
       pot.classList.add("selected");
 
-      updateEvidence("pots_transfer", {
-        potSelected: pot.dataset.potId,
-        travelPotSelected: pot.dataset.potId === "travel"
-      });
+      if (task.type === "pots_transfer") {
+        updateEvidence(task.id, {
+          potSelected: pot.dataset.potId,
+          travelPotSelected: pot.dataset.potId === "travel"
+        });
+      }
 
       logEvent("pot_selected", {
         componentId: pot.dataset.componentId,
         potId: pot.dataset.potId,
+        activeTaskId: task.id,
+        activeTaskType: task.type,
         contentSetIndex: state.contentSetIndex
       });
     });
   });
 
-  if (task.type === "pot_drag") bindPotDrag();
+  if (task.type === "pot_drag") bindPotDrag(task);
 
   if (task.type === "pots_transfer") {
     bindTypingTask(task, document.getElementById("potAmountInput"), state.content.transferAmount);
@@ -1430,6 +1450,7 @@ function bindPotsHandlers() {
 
       logEvent("pot_transfer_confirmed", {
         componentId: "move_money_button",
+        activeTaskId: task.id,
         contentSetIndex: state.contentSetIndex
       });
 
@@ -1442,7 +1463,7 @@ function bindPotsHandlers() {
 function bindInsightsHandlers() {
   const task = window.currentTask;
 
-  bindCardCarouselHandlers();
+  bindCardCarouselHandlers(task);
   bindScrollEvidence("insight_list", task.id, "insightMaxScrollTop");
 
   document.querySelectorAll(".insight-card").forEach((card) => {
@@ -1451,45 +1472,55 @@ function bindInsightsHandlers() {
       state.reviewedInsights.add(insightId);
       card.classList.add("selected");
 
-      updateEvidence("insights_review", {
-        targetInsightTapped: insightId === state.content.insightTarget.id,
-        selectedInsight: insightId,
-        reviewedCount: state.reviewedInsights.size
-      });
+      if (task.type === "insights_review") {
+        updateEvidence(task.id, {
+          targetInsightTapped: insightId === state.content.insightTarget.id,
+          selectedInsight: insightId,
+          reviewedCount: state.reviewedInsights.size
+        });
+      }
 
       logEvent("insight_card_selected", {
         componentId: card.dataset.componentId,
         isTargetInsight: insightId === state.content.insightTarget.id,
         reviewedCount: state.reviewedInsights.size,
+        activeTaskId: task.id,
+        activeTaskType: task.type,
         contentSetIndex: state.contentSetIndex
       });
     });
   });
 }
 
-function bindCardCarouselHandlers() {
+function bindCardCarouselHandlers(task = window.currentTask) {
   const carousel = document.querySelector(".swipe-carousel");
   if (!carousel) return;
 
   const targetId = state.content.spendingCardTarget?.id;
-  bindHorizontalScrollEvidence(carousel, "insights_swipe_cards", "carouselMaxScrollLeft");
+  const isCardSwipeTask = task?.type === "card_swipe";
+
+  if (isCardSwipeTask) {
+    bindHorizontalScrollEvidence(carousel, task.id, "carouselMaxScrollLeft");
+  }
 
   carousel.querySelectorAll(".spend-card").forEach((card) => {
     addScreenListener(card, "click", () => {
       carousel.querySelectorAll(".spend-card").forEach((item) => item.classList.remove("selected"));
       card.classList.add("selected");
 
-      const evidence = getEvidence("insights_swipe_cards");
+      const evidence = isCardSwipeTask ? getEvidence(task.id) : {};
       const liveScrollLeft = Math.max(carousel.scrollLeft || 0, evidence.carouselMaxScrollLeft || 0);
       const targetCardSelected = card.dataset.cardId === targetId;
 
-      updateEvidence("insights_swipe_cards", {
-        swiped: liveScrollLeft > 20,
-        targetCardSelected,
-        selectedCard: card.dataset.cardId,
-        targetCardId: targetId,
-        carouselMaxScrollLeftAtSelection: roundLocal(liveScrollLeft)
-      });
+      if (isCardSwipeTask) {
+        updateEvidence(task.id, {
+          swiped: liveScrollLeft > 20,
+          targetCardSelected,
+          selectedCard: card.dataset.cardId,
+          targetCardId: targetId,
+          carouselMaxScrollLeftAtSelection: roundLocal(liveScrollLeft)
+        });
+      }
 
       logEvent("spending_card_selected", {
         componentId: card.dataset.componentId,
@@ -1497,21 +1528,26 @@ function bindCardCarouselHandlers() {
         targetCardId: targetId,
         targetCardSelected,
         carouselMaxScrollLeft: roundLocal(liveScrollLeft),
+        activeTaskId: task?.id || null,
+        activeTaskType: task?.type || null,
         contentSetIndex: state.contentSetIndex
       });
 
-      logEvent("card_swipe_summary", {
-        componentId: "spending_card_carousel",
-        selectedCard: card.dataset.cardId,
-        targetCardId: targetId,
-        targetCardSelected,
-        swiped: liveScrollLeft > 20,
-        maxScrollLeft: roundLocal(liveScrollLeft),
-        maxScrollLeftRatio: carousel.scrollWidth > carousel.clientWidth
-          ? roundLocal(liveScrollLeft / (carousel.scrollWidth - carousel.clientWidth))
-          : 0,
-        contentSetIndex: state.contentSetIndex
-      });
+      if (isCardSwipeTask) {
+        logEvent("card_swipe_summary", {
+          componentId: "spending_card_carousel",
+          selectedCard: card.dataset.cardId,
+          targetCardId: targetId,
+          targetCardSelected,
+          swiped: liveScrollLeft > 20,
+          maxScrollLeft: roundLocal(liveScrollLeft),
+          maxScrollLeftRatio: carousel.scrollWidth > carousel.clientWidth
+            ? roundLocal(liveScrollLeft / (carousel.scrollWidth - carousel.clientWidth))
+            : 0,
+          activeTaskId: task.id,
+          contentSetIndex: state.contentSetIndex
+        });
+      }
     });
   });
 }
@@ -1519,7 +1555,7 @@ function bindCardCarouselHandlers() {
 function bindSecureHandlers() {
   const task = window.currentTask;
 
-  if (task.type === "swipe_approval") bindApprovalSwipe();
+  if (task.type === "swipe_approval") bindApprovalSwipe(task);
   if (task.type === "guided_reply") bindTypingTask(task, document.getElementById("replyInput"), state.content.target.reply);
 
   if (task.type === "finish") {
@@ -1612,10 +1648,11 @@ function updateScrollEvidence(taskId, fieldName, rawValue, rawMax) {
   return getEvidence(taskId);
 }
 
-function bindPotDrag() {
+function bindPotDrag(task = window.currentTask) {
   const track = document.querySelector(".drag-slider");
   const thumb = document.getElementById("dragThumb");
   const fill = document.getElementById("dragFill");
+  const taskId = task?.id || "pots_drag_amount";
 
   bindDragControl(
     track,
@@ -1626,7 +1663,7 @@ function bindPotDrag() {
       thumb.style.left = `${ratio * 100}%`;
       thumb.textContent = `GBP ${value}`;
 
-      updateEvidence("pots_drag_amount", {
+      updateEvidence(taskId, {
         currentRatio: ratio,
         currentValue: value,
         targetValue: state.content.transferAmount,
@@ -1639,7 +1676,7 @@ function bindPotDrag() {
       const value = String(Math.round(ratio * 12));
       const correctRelease = Math.abs(Number(value) - Number(state.content.transferAmount)) <= 1;
 
-      updateEvidence("pots_drag_amount", {
+      updateEvidence(taskId, {
         released: true,
         releasedRatio: ratio,
         releasedValue: value,
@@ -1655,28 +1692,30 @@ function bindPotDrag() {
         releasedValue: value,
         targetValue: state.content.transferAmount,
         correctRelease,
+        activeTaskId: taskId,
         durationMs: meta.durationMs
       });
     }
   );
 }
 
-function bindApprovalSwipe() {
+function bindApprovalSwipe(task = window.currentTask) {
   const track = document.querySelector(".swipe-confirm");
   const thumb = document.getElementById("approvalThumb");
+  const taskId = task?.id || "secure_approval";
 
   bindDragControl(
     track,
     thumb,
     (ratio) => {
       thumb.style.left = `${ratio * 100}%`;
-      updateEvidence("secure_approval", { swipeRatio: ratio });
+      updateEvidence(taskId, { swipeRatio: ratio });
     },
     (ratio, meta) => {
       const approved = ratio > 0.78;
       thumb.style.left = approved ? "100%" : "0%";
 
-      updateEvidence("secure_approval", {
+      updateEvidence(taskId, {
         approvalSelected: approved,
         action: approved ? "Approve" : null,
         expectedAction: "Approve",
@@ -1690,13 +1729,14 @@ function bindApprovalSwipe() {
         componentId: "approval_swipe_thumb",
         swipeRatio: ratio,
         approved,
+        activeTaskId: taskId,
         durationMs: meta.durationMs
       });
     }
   );
 
   addScreenListener(document.querySelector(".decline-link"), "click", () => {
-    updateEvidence("secure_approval", {
+    updateEvidence(taskId, {
       approvalSelected: true,
       action: "Decline",
       expectedAction: "Approve",
@@ -1706,7 +1746,8 @@ function bindApprovalSwipe() {
     logEvent("secure_approval_selected", {
       componentId: "approval_decline",
       action: "Decline",
-      correctAction: false
+      correctAction: false,
+      activeTaskId: taskId
     });
   });
 }
