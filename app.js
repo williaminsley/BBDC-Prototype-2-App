@@ -1,6 +1,11 @@
 const app = document.getElementById("app");
 
+if (!app) {
+  throw new Error("Missing required #app root element.");
+}
+
 const CONTENT_SET_COUNT = 2;
+const EXPECTED_TASK_COUNT = 26;
 const RECENT_TARGET_KEY = "bbdc_recent_targets_v3";
 const RECENT_TARGET_LIMIT = 10;
 
@@ -23,6 +28,10 @@ const state = {
 let screenController = new AbortController();
 let bottomStackObserver = null;
 let libraryExtended = false;
+let startingSession = false;
+let advancingTask = false;
+let passcodeAdvancing = false;
+let finishingSession = false;
 
 const EXTRA_MERCHANTS = [
   ["Costa", "GBP 4.35", "Coffee", "coffee before lecture", "Yes, please mark this as coffee.", "CO", "coffee purchase"],
@@ -234,9 +243,16 @@ function renderDeviceModelField() {
 function bindSegmentGroups() {
   document.querySelectorAll(".seg-group").forEach((group) => {
     group.querySelectorAll(".seg-chip").forEach((button) => {
+      button.setAttribute("aria-pressed", button.classList.contains("selected") ? "true" : "false");
+
       addScreenListener(button, "click", () => {
-        group.querySelectorAll(".seg-chip").forEach((chip) => chip.classList.remove("selected"));
+        group.querySelectorAll(".seg-chip").forEach((chip) => {
+          chip.classList.remove("selected");
+          chip.setAttribute("aria-pressed", "false");
+        });
+
         button.classList.add("selected");
+        button.setAttribute("aria-pressed", "true");
       });
     });
   });
@@ -275,28 +291,57 @@ function modelGroupFromPlatform(value) {
 }
 
 async function startReview() {
-  state.identity = ensureIdentity();
-  state.context = collectContextAnswers();
-  state.contentSets = generateContentSets(CONTENT_SET_COUNT);
-  state.contentSetIndex = 0;
-  state.content = state.contentSets[0];
-  state.tasks = buildTaskSequence(state.contentSets.length);
-  state.evidence = {};
-  state.completedTasks = new Set();
-  state.currentTaskIndex = -1;
-  state.activeArea = "secure";
-  state.selectedTransaction = null;
-  state.reviewedInsights = new Set();
-  state.codeInput = "";
+  if (startingSession) return;
+  startingSession = true;
 
-  window.GUIDED_TASKS = state.tasks.map((task) => ({ ...task }));
-  window.currentActiveArea = state.activeArea;
+  const startButton = document.getElementById("startReview");
+  if (startButton) startButton.disabled = true;
 
-  createSession(state.context, publicGeneratedContent());
-  const permissionResult = await requestMotionPermission();
-  startMotionLogging();
-  logEvent("motion_logging_started", { permissionResult });
-  goToTask(0);
+  try {
+    state.identity = ensureIdentity();
+    state.context = collectContextAnswers();
+    state.contentSets = generateContentSets(CONTENT_SET_COUNT);
+    state.contentSetIndex = 0;
+    state.content = state.contentSets[0];
+    state.tasks = buildTaskSequence(state.contentSets.length);
+    state.evidence = {};
+    state.completedTasks = new Set();
+    state.currentTaskIndex = -1;
+    state.activeArea = "secure";
+    state.selectedTransaction = null;
+    state.reviewedInsights = new Set();
+    state.codeInput = "";
+
+    window.GUIDED_TASKS = state.tasks.map((task) => ({ ...task }));
+    window.currentActiveArea = state.activeArea;
+
+    createSession(state.context, publicGeneratedContent());
+
+    let permissionResult = "not_requested";
+
+    try {
+      permissionResult = await requestMotionPermission();
+    } catch (error) {
+      permissionResult = "error";
+      logEvent("motion_permission_error", {
+        message: error?.message || "Unknown motion permission error"
+      });
+    }
+
+    startMotionLogging();
+    logEvent("motion_logging_started", { permissionResult });
+    goToTask(0);
+  } catch (error) {
+    console.error(error);
+    app.innerHTML = `
+      <section class="intro-screen compact-intro">
+        <h1>Could not start session</h1>
+        <p class="lead">The banking review could not be started. Please refresh and try again.</p>
+        <p class="muted">${escapeHtml(error?.message || "Unknown error")}</p>
+      </section>`;
+  } finally {
+    startingSession = false;
+  }
 }
 function collectContextAnswers() {
   const context = {};
@@ -338,7 +383,7 @@ function publicGeneratedContent() {
       spendingCardCount: content.spendingCards.length
     })),
     randomization: {
-      contentPool: "expanded_single_26_task_sequence",
+      contentPool: `expanded_single_${state.tasks.length}_task_sequence`,
       contentSetsGeneratedUpfront: true,
       avoidsRecentLocalTargets: true,
       recentWindow: RECENT_TARGET_LIMIT
@@ -368,11 +413,18 @@ function buildTaskSequence(contentSetCount) {
   }
 
   const finalTask = GUIDED_TASKS.find((task) => task.id === "finish_feeling");
-  if (finalTask) {
-    addTaskInstance(tasks, occurrenceCounts, finalTask, GUIDED_TASKS.indexOf(finalTask), contentSetCount - 1);
+
+  if (!finalTask) {
+    throw new Error("Missing required finish_feeling task.");
   }
 
-  return tasks.slice(0, 26);
+  addTaskInstance(tasks, occurrenceCounts, finalTask, GUIDED_TASKS.indexOf(finalTask), contentSetCount - 1);
+
+  if (tasks.length !== EXPECTED_TASK_COUNT) {
+    throw new Error(`Expected ${EXPECTED_TASK_COUNT} tasks, generated ${tasks.length}.`);
+  }
+
+  return tasks;
 }
 
 function addTaskInstance(tasks, occurrenceCounts, task, baseTaskIndex, contentSetIndex) {
@@ -675,6 +727,8 @@ function renderCode() {
 }
 
 function handleCodeKey(key) {
+  if (passcodeAdvancing) return;
+
   const beforeLength = state.codeInput.length;
 
   if (key === "Clear") state.codeInput = "";
@@ -701,8 +755,13 @@ function handleCodeKey(key) {
   renderCodeDots();
 
   if (state.codeInput.length === 4 && state.codeInput === state.content.code) {
+    passcodeAdvancing = true;
     updateEvidence("unlock_code", { completedWithCorrectCode: true });
-    setTimeout(() => goToTask(state.currentTaskIndex + 1), 200);
+
+    setTimeout(() => {
+      passcodeAdvancing = false;
+      goToTask(state.currentTaskIndex + 1);
+    }, 200);
   } else if (state.codeInput.length === 4) {
     const warning = document.getElementById("codeWarning");
     if (warning) {
@@ -1440,6 +1499,19 @@ function bindCardCarouselHandlers() {
         carouselMaxScrollLeft: roundLocal(liveScrollLeft),
         contentSetIndex: state.contentSetIndex
       });
+
+      logEvent("card_swipe_summary", {
+        componentId: "spending_card_carousel",
+        selectedCard: card.dataset.cardId,
+        targetCardId: targetId,
+        targetCardSelected,
+        swiped: liveScrollLeft > 20,
+        maxScrollLeft: roundLocal(liveScrollLeft),
+        maxScrollLeftRatio: carousel.scrollWidth > carousel.clientWidth
+          ? roundLocal(liveScrollLeft / (carousel.scrollWidth - carousel.clientWidth))
+          : 0,
+        contentSetIndex: state.contentSetIndex
+      });
     });
   });
 }
@@ -1453,7 +1525,13 @@ function bindSecureHandlers() {
   if (task.type === "finish") {
     document.querySelectorAll(".feeling-chip").forEach((button) => {
       addScreenListener(button, "click", () => {
-        document.querySelectorAll(".feeling-chip").forEach((item) => item.classList.remove("selected"));
+        if (finishingSession) return;
+        finishingSession = true;
+
+        document.querySelectorAll(".feeling-chip").forEach((item) => {
+          item.classList.remove("selected");
+          item.disabled = true;
+        });
         button.classList.add("selected");
 
         updateEvidence(task.id, {
@@ -1466,7 +1544,10 @@ function bindSecureHandlers() {
           feeling: button.dataset.feeling
         });
 
-        setTimeout(() => goToTask(state.currentTaskIndex + 1), 160);
+        setTimeout(() => {
+          finishingSession = false;
+          goToTask(state.currentTaskIndex + 1);
+        }, 160);
       });
     });
   }
@@ -1644,6 +1725,11 @@ function bindDragControl(track, thumb, onMove, onEnd) {
   };
 
   const start = (event) => {
+    if (active) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
     active = true;
     startTime = performance.now();
     lastPoint = { x: event.clientX, y: event.clientY };
@@ -1693,6 +1779,8 @@ function bindDragControl(track, thumb, onMove, onEnd) {
 }
 
 function attemptContinue() {
+  if (advancingTask) return;
+
   const warning = validateTask(window.currentTask);
 
   if (warning) {
@@ -1700,8 +1788,16 @@ function attemptContinue() {
     return;
   }
 
+  advancingTask = true;
   clearWarning();
-  goToTask(state.currentTaskIndex + 1);
+
+  try {
+    goToTask(state.currentTaskIndex + 1);
+  } finally {
+    setTimeout(() => {
+      advancingTask = false;
+    }, 250);
+  }
 }
 
 function validateTask(task) {
@@ -1779,8 +1875,35 @@ function renderCompletion() {
   window.currentTask = null;
   window.currentScreenId = "complete";
 
-  completeSession();
+  try {
+    completeSession();
+  } catch (error) {
+    console.error(error);
+    app.innerHTML = `
+      <section class="intro-screen completion-screen">
+        <h1>Session finalisation error</h1>
+        <p class="lead">The session reached the end, but could not be finalised cleanly.</p>
+        <p class="muted">${escapeHtml(error?.message || "Unknown error")}</p>
+        <button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button>
+      </section>`;
+
+    addScreenListener(document.getElementById("startAnotherBtn"), "click", renderContext);
+    return;
+  }
+
   const session = getSession();
+
+  if (!session) {
+    app.innerHTML = `
+      <section class="intro-screen completion-screen">
+        <h1>Session error</h1>
+        <p class="lead">The session could not be found after completion. Please refresh and try again.</p>
+        <button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button>
+      </section>`;
+
+    addScreenListener(document.getElementById("startAnotherBtn"), "click", renderContext);
+    return;
+  }
 
   app.innerHTML = `
     <section class="intro-screen completion-screen">
@@ -1793,7 +1916,8 @@ function renderCompletion() {
         <div><span>Duration</span><strong>${Math.round((session.sessionDurationMs || 0) / 1000)}s</strong></div>
         <div><span>Events</span><strong>${session.events.length}</strong></div>
       </div>
-      ${APP_MODE === "debug" ? `<button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>` : `<p class="muted">Your session has been uploaded.</p>`}
+      <button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>
+      ${APP_MODE !== "debug" ? `<p class="muted">Upload is not enabled in this build. Download the JSON and submit it using the study instructions.</p>` : ""}
       <button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button>
     </section>`;
 
@@ -1898,6 +2022,10 @@ function shuffle(items) {
 }
 
 function randomChoice(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("randomChoice called with an empty array.");
+  }
+
   return items[Math.floor(Math.random() * items.length)];
 }
 
