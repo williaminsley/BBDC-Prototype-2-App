@@ -44,13 +44,17 @@ function safeSetLocalStorage(key, value) {
 }
 
 function ensureIdentity() {
-  let participantId = safeGetLocalStorage("participantId") || memoryParticipantId;
+  const stored = safeGetLocalStorage("participantId");
+  let participantId = stored || memoryParticipantId;
+  let identitySource = stored
+    ? "localStorage_returning"
+    : (memoryParticipantId ? "memory_fallback" : "fresh_minted");
   if (!participantId) {
     participantId = makeParticipantId();
     memoryParticipantId = participantId;
     safeSetLocalStorage("participantId", participantId);
   }
-  return { uid: null, participantId };
+  return { uid: null, participantId, identitySource };
 }
 
 function getNextSessionIndex() {
@@ -147,6 +151,7 @@ function createSession(context = {}, generatedContent = {}) {
     sessionId: makeId(),
     sessionIndex,
     participantId: identity.participantId,
+    identitySource: identity.identitySource,
     startedAtIso: nowIso(),
     createdAtClientISO: nowIso(),
     completedAtIso: null,
@@ -166,7 +171,7 @@ function createSession(context = {}, generatedContent = {}) {
     taskSummary: [],
     qualitySummary: null
   };
-  logEvent("session_start", { participantId: identity.participantId, sessionIndex, storesRawText: false, storesGeolocation: false });
+  logEvent("session_start", { participantId: identity.participantId, identitySource: identity.identitySource, sessionIndex, storesRawText: false, storesGeolocation: false });
   attachGlobalListeners();
   attachViewportLogging();
   return session;
@@ -347,6 +352,12 @@ function attachGlobalListeners() {
   window.addEventListener("resize", () => logEvent("resize", { innerWidth: innerWidth, innerHeight: innerHeight }), { passive: true });
   window.addEventListener("orientationchange", () => logEvent("orientationchange", {}), { passive: true });
   window.addEventListener("scroll", () => { const now = performance.now(); if (now - lastWindowScrollLog < 30) return; lastWindowScrollLog = now; logEvent("window_scroll", { scrollTop: roundMaybe(scrollY, 2), scrollLeft: roundMaybe(scrollX, 2) }); }, { passive: true });
+  window.addEventListener("beforeunload", (e) => {
+    if (session && !session.exportedAtIso && !loggingClosed) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
 }
 
 function attachViewportLogging() {

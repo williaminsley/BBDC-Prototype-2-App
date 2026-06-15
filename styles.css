@@ -731,6 +731,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #fff1e8;
+  touch-action: none;
 }
 
 .drag-slider {

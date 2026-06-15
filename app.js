@@ -1769,7 +1769,6 @@ function bindDragControl(track, thumb, onMove, onEnd) {
     if (active) return;
 
     event.preventDefault();
-    event.stopPropagation();
 
     active = true;
     startTime = performance.now();
@@ -1779,6 +1778,7 @@ function bindDragControl(track, thumb, onMove, onEnd) {
 
     logEvent("gesture_drag_start", {
       componentId: thumb.dataset.componentId || null,
+      pointerType: event.pointerType ?? null,
       x: event.clientX,
       y: event.clientY
     });
@@ -1806,6 +1806,7 @@ function bindDragControl(track, thumb, onMove, onEnd) {
 
     logEvent("gesture_drag_end", {
       componentId: thumb.dataset.componentId || null,
+      pointerType: event.pointerType ?? null,
       samples: meta.samples,
       distancePx: roundLocal(meta.distancePx),
       durationMs: roundLocal(meta.durationMs)
