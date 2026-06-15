@@ -5,8 +5,8 @@ const APP_MODE = "collection";
 
 const SESSION_CONFIG = {
   targetSessionMinutes: 2.5,
-  targetSessionRangeSeconds: [130, 180],
-  minimumUsefulSeconds: 100,
+  targetSessionRangeSeconds: [30, 600],
+  minimumUsefulSeconds: 30,
   recommendedWindowMs: 7500,
   recommendedStepMs: 2500,
   storesRawText: false,

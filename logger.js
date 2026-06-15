@@ -441,16 +441,30 @@ function completeSession() {
   return session;
 }
 
-function downloadSessionJson() {
+async function downloadSessionJson() {
   const finalSession = completeSession();
   if (!finalSession) return;
   finalSession.exportedAtIso = nowIso();
+  const filename = `${finalSession.participantId}_s${String(finalSession.sessionIndex).padStart(3, "0")}_${finalSession.sessionId}.json`;
+  const makeBlob = () => new Blob([JSON.stringify(finalSession, null, 2)], { type: "application/json;charset=utf-8" });
+
+  try {
+    finalSession.exportMethod = "web_share";
+    const file = new File([makeBlob()], filename, { type: "application/json" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  } catch (_) {
+    // Unsupported or the user cancelled — fall through to a normal download.
+  }
+
   finalSession.exportMethod = "manual_json_download";
-  const blob = new Blob([JSON.stringify(finalSession, null, 2)], { type: "application/json;charset=utf-8" });
+  const blob = makeBlob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${finalSession.participantId}_s${String(finalSession.sessionIndex).padStart(3, "0")}_${finalSession.sessionId}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
