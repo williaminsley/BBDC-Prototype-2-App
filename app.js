@@ -84,10 +84,64 @@ const SPENDING_CARDS = [
 ];
 
 const DEVICE_MODEL_OPTIONS = {
-  iphone: ["iPhone 17", "iPhone 16", "iPhone 15", "iPhone 14", "iPhone 13 series", "Other iPhone / not sure"],
-  android: ["Samsung Galaxy S series", "Samsung Galaxy A series", "Google Pixel", "OnePlus", "Xiaomi / Redmi / POCO", "Other Android / not sure"],
-  tablet: ["iPad", "Samsung Galaxy Tab", "Other tablet / not sure"],
-  desktop: ["MacBook trackpad", "Windows laptop trackpad", "Laptop with mouse", "Desktop with mouse", "Other laptop/desktop"],
+  iphone: [
+    "iPhone 17e",
+    "iPhone 17",
+    "iPhone 17 Pro",
+    "iPhone 17 Pro Max",
+    "iPhone Air",
+    "iPhone 16e",
+    "iPhone 16",
+    "iPhone 16 Plus",
+    "iPhone 16 Pro",
+    "iPhone 16 Pro Max",
+    "iPhone 15",
+    "iPhone 15 Plus",
+    "iPhone 15 Pro",
+    "iPhone 15 Pro Max",
+    "iPhone 14",
+    "iPhone 14 Plus",
+    "iPhone 14 Pro",
+    "iPhone 14 Pro Max",
+    "iPhone 13 / 13 mini",
+    "iPhone 13 Pro / Pro Max",
+    "Older iPhone",
+    "Other iPhone / not sure"
+  ],
+  android: [
+    "Samsung Galaxy S range",
+    "Samsung Galaxy S Ultra",
+    "Samsung Galaxy Z Fold",
+    "Samsung Galaxy Z Flip",
+    "Samsung Galaxy A range",
+    "Google Pixel standard",
+    "Google Pixel Pro",
+    "OnePlus",
+    "Xiaomi / Redmi / POCO",
+    "Oppo",
+    "Honor",
+    "Motorola",
+    "Sony Xperia",
+    "Nothing Phone",
+    "Other Android / not sure"
+  ],
+  tablet: [
+    "iPad mini",
+    "iPad",
+    "iPad Air",
+    "iPad Pro 11 inch",
+    "iPad Pro 12.9 / 13 inch",
+    "Samsung Galaxy Tab",
+    "Other tablet / not sure"
+  ],
+  desktop: [
+    "MacBook trackpad",
+    "Mac desktop with mouse / trackpad",
+    "Windows laptop trackpad",
+    "Windows laptop with mouse",
+    "Desktop with mouse",
+    "Other laptop/desktop"
+  ],
   other: ["Other device", "Not sure"]
 };
 
@@ -132,15 +186,23 @@ function renderIntro() {
   app.innerHTML = `
     <section class="intro-screen compact-intro">
       <h1>Behavioural Biometrics Study</h1>
-      <p class="lead">Complete one demo banking sequence of up to <strong>26 tasks</strong>. Some task types repeat later with different generated content.</p>
+      <p class="lead">Complete one guided demo banking review of up to <strong>26 steps</strong>. It usually takes around <strong>3–6 minutes</strong>.</p>
+
+      <article class="info-card">
+        <h2>What you will do</h2>
+        <p>Use a fake banking interface to check demo accounts, search fake transactions, scroll lists, drag a savings-pot slider, swipe an approval control and copy short prompted text.</p>
+      </article>
+
       <article class="info-card">
         <h2>What is collected</h2>
-        <p>Interaction metadata such as tap timing, scroll behaviour, typing rhythm, drag paths, swipe movement, context answers and device/browser information.</p>
+        <p>Behavioural metadata such as tap timing, touch/pointer movement, scroll behaviour, typing rhythm, drag/swipe movement, optional motion/orientation, context answers and device/browser information.</p>
       </article>
+
       <article class="info-card">
         <h2>Privacy</h2>
-        <p>Only type the short prompted text shown in the app. Do not enter real banking details or personal information. Raw typed content is not stored.</p>
+        <p>Do not enter real banking details or personal information. Raw typed content is not stored; only timing, length, correction and interaction metadata are recorded.</p>
       </article>
+
       <button id="introNext" class="primary-btn" type="button">Continue to Consent</button>
     </section>`;
 
@@ -154,7 +216,26 @@ function renderConsent() {
   app.innerHTML = `
     <section class="intro-screen compact-intro">
       <h1>Consent</h1>
-      <p class="lead">The app records behavioural metadata from a fake banking interface. It does not ask for real banking data.</p>
+      <p class="lead">This study collects pseudonymised behavioural, contextual and device interaction data from a fake banking interface for academic research into behavioural biometrics and continuous authentication.</p>
+
+      <article class="info-card">
+        <h2>What will be collected</h2>
+        <p><strong>Typing metadata:</strong> key timing, input length, correction behaviour and editing rhythm. Raw typed content is not stored.</p>
+        <p><strong>Interaction metadata:</strong> touch, pointer, scroll, drag, swipe, navigation and task-completion events.</p>
+        <p><strong>Device/context metadata:</strong> motion/orientation where available, time of day, fatigue, focus, posture, hand use, movement, environment, device model, browser, screen size, Participant ID, session ID and timing.</p>
+      </article>
+
+      <article class="info-card">
+        <h2>What is not collected</h2>
+        <p>The app does not ask for real banking details, passwords, names, email addresses, phone numbers or addresses. Geolocation is not collected. Data is pseudonymised rather than fully anonymous.</p>
+      </article>
+
+      <article class="info-card">
+        <h2>Use and withdrawal</h2>
+        <p>Data may be processed into derived research datasets and statistical features for modelling and dissertation reporting. Participation is voluntary; you can stop before finishing by closing the page.</p>
+        <p>To withdraw uploaded data, contact the study lead with the <strong>Participant ID</strong> shown on the completion screen. <strong>18+ only.</strong></p>
+      </article>
+
       <label class="check-row"><input id="consentAge" type="checkbox" /><span>I am 18 or over, I understand what data may be collected, and I agree to take part.</span></label>
       <label class="check-row"><input id="consentBrowser" type="checkbox" /><span>I am using a normal Safari or Chrome tab, not private/incognito mode.</span></label>
       <button id="consentNext" class="primary-btn" type="button" disabled>Continue</button>
@@ -237,6 +318,7 @@ function renderDeviceModelField() {
       <select id="deviceModelSelect" class="text-input context-input" data-context-field="deviceModel">
         ${DEVICE_MODEL_OPTIONS.iphone.map((option) => `<option value="${escapeAttr(slugify(option))}">${escapeHtml(option)}</option>`).join("")}
       </select>
+      <small>Use Settings → General → About on iPhone, Settings → About phone on Android, or system settings on laptop/desktop if unsure.</small>
     </label>`;
 }
 
@@ -349,6 +431,7 @@ async function startReview() {
     startingSession = false;
   }
 }
+
 function collectContextAnswers() {
   const context = {};
 
@@ -359,6 +442,10 @@ function collectContextAnswers() {
   document.querySelectorAll(".context-input[data-context-field]").forEach((input) => {
     context[input.dataset.contextField] = input.value;
   });
+
+  context.consentVersion = typeof CONSENT_VERSION !== "undefined" ? CONSENT_VERSION : "p2_consent_2026_06_30";
+  context.consentAccepted = true;
+  context.browserRequirementAccepted = true;
 
   return context;
 }
