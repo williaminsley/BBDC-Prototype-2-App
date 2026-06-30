@@ -397,12 +397,6 @@ async function startReview() {
     window.GUIDED_TASKS = state.tasks.map((task) => ({ ...task }));
     window.currentActiveArea = state.activeArea;
 
-    try {
-      if (window.bbdcFirebase) await window.bbdcFirebase.ensureIdentity();
-    } catch (e) {
-      console.warn("Firebase identity unavailable; using local identity", e);
-    }
-
     createSession(state.context, publicGeneratedContent());
 
     let permissionResult = "not_requested";
@@ -418,6 +412,13 @@ async function startReview() {
 
     startMotionLogging();
     logEvent("motion_logging_started", { permissionResult });
+
+    try {
+      if (window.bbdcFirebase) await window.bbdcFirebase.ensureIdentity(state.identity?.participantId || null);
+    } catch (e) {
+      console.warn("Firebase identity unavailable; using local identity", e);
+    }
+
     goToTask(0);
   } catch (error) {
     console.error(error);
