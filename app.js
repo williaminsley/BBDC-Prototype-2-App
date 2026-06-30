@@ -2051,43 +2051,48 @@ function renderCompletion() {
         <div><span>Duration</span><strong>${Math.round((session.sessionDurationMs || 0) / 1000)}s</strong></div>
         <div><span>Events</span><strong>${session.events.length}</strong></div>
       </div>
-      <button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>
-      <p class="muted">If the upload doesn't finish, tap Download JSON and submit it using the study instructions.</p>
-      <button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button>
+      <p id="uploadStatus" class="muted">Preparing upload…</p>
+      <button class="secondary-btn" type="button" id="retryUploadBtn" hidden>Retry upload</button>
+      <button class="secondary-btn" type="button" id="startAnotherBtn" disabled>Start another session</button>
     </section>`;
 
-  addScreenListener(document.getElementById("downloadJsonBtn"), "click", downloadSessionJson);
-  addScreenListener(document.getElementById("startAnotherBtn"), "click", renderContext);
+  const startAnotherBtn = document.getElementById("startAnotherBtn");
+  const retryUploadBtn = document.getElementById("retryUploadBtn");
 
-  // P1-style auto-upload with Share/Download fallback (self-contained)
-  (function attemptUpload() {
+  addScreenListener(startAnotherBtn, "click", renderContext);
+
+  async function attemptUpload() {
     const s = (typeof getSession === "function") ? getSession() : null;
-    if (!s || !s.sessionId) return;
-    if (window.__bbdcUploadedSessionId === s.sessionId) return; // don't double-fire
+    const statusEl = document.getElementById("uploadStatus");
 
-    let statusEl = document.getElementById("uploadStatus");
-    if (!statusEl) {
-      statusEl = document.createElement("p");
-      statusEl.id = "uploadStatus";
-      statusEl.className = "muted";
-      (document.getElementById("app") || document.body).appendChild(statusEl);
-    }
+    if (!s || !s.sessionId || !statusEl) return;
 
     if (!window.bbdcFirebase) {
-      statusEl.textContent = "Saved on device. Tap Save / Share to submit your data.";
+      statusEl.textContent = "Upload unavailable. Please check your internet connection and try again.";
+      retryUploadBtn.hidden = false;
+      startAnotherBtn.disabled = false;
       return;
     }
 
-    window.__bbdcUploadedSessionId = s.sessionId;
-    statusEl.textContent = "Uploading…";
-    window.bbdcFirebase.uploadSessionToFirebase(s)
-      .then(() => { statusEl.textContent = "Uploaded. Thank you."; })
-      .catch((e) => {
-        console.error("UPLOAD_ERROR", e);
-        window.__bbdcUploadedSessionId = null; // allow retry via Save/Share
-        statusEl.textContent = "Upload failed — please tap Save / Share to submit your data.";
-      });
-  })();
+    try {
+      retryUploadBtn.hidden = true;
+      startAnotherBtn.disabled = true;
+      statusEl.textContent = "Uploading…";
+
+      await window.bbdcFirebase.uploadSessionToFirebase(s);
+
+      statusEl.textContent = "Uploaded. Thank you.";
+      startAnotherBtn.disabled = false;
+    } catch (e) {
+      console.error("UPLOAD_ERROR", e);
+      statusEl.textContent = "Upload failed. Please check your internet connection, keep this page open, and tap Retry upload.";
+      retryUploadBtn.hidden = false;
+      startAnotherBtn.disabled = false;
+    }
+  }
+
+  addScreenListener(retryUploadBtn, "click", attemptUpload);
+  attemptUpload();
 }
 
 function showWarning(message) {
