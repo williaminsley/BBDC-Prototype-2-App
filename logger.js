@@ -13,6 +13,10 @@ let lastOrientationLog = 0;
 let lastViewportLog = 0;
 const taskStarts = new Map();
 
+const P2_PARTICIPANT_ID_KEY = "bbdc_p2_participantId";
+const P2_SESSION_COUNT_KEY = "bbdc_p2_sessionCount";
+const LEGACY_PARTICIPANT_ID_KEY = "participantId";
+
 function nowIso() { return new Date().toISOString(); }
 function tRelMs() { return session ? Math.round(performance.now() - session.startedAtPerf) : 0; }
 function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
@@ -44,24 +48,28 @@ function safeSetLocalStorage(key, value) {
 }
 
 function ensureIdentity() {
-  const stored = safeGetLocalStorage("participantId");
-  let participantId = stored || memoryParticipantId;
-  let identitySource = stored
-    ? "localStorage_returning"
-    : (memoryParticipantId ? "memory_fallback" : "fresh_minted");
+  const p2Stored = safeGetLocalStorage(P2_PARTICIPANT_ID_KEY);
+  const legacyStored = safeGetLocalStorage(LEGACY_PARTICIPANT_ID_KEY);
+  let participantId = p2Stored || legacyStored || memoryParticipantId;
+  let identitySource = p2Stored
+    ? "localStorage_p2_returning"
+    : (legacyStored ? "localStorage_legacy_migrated_to_p2" : (memoryParticipantId ? "memory_fallback" : "fresh_minted"));
+
   if (!participantId) {
     participantId = makeParticipantId();
-    memoryParticipantId = participantId;
-    safeSetLocalStorage("participantId", participantId);
+    identitySource = "fresh_minted";
   }
+
+  memoryParticipantId = participantId;
+  safeSetLocalStorage(P2_PARTICIPANT_ID_KEY, participantId);
   return { uid: null, participantId, identitySource };
 }
 
 function getNextSessionIndex() {
-  const storedCount = Number(safeGetLocalStorage("sessionCount") || 0);
+  const storedCount = Number(safeGetLocalStorage(P2_SESSION_COUNT_KEY) || 0);
   const count = Math.max(storedCount, memorySessionCount) + 1;
   memorySessionCount = count;
-  safeSetLocalStorage("sessionCount", String(count));
+  safeSetLocalStorage(P2_SESSION_COUNT_KEY, String(count));
   return count;
 }
 
@@ -181,9 +189,9 @@ function getSession() { return session; }
 
 function shouldRedactKey(key) {
   const normalisedKey = String(key || "").toLowerCase();
-  const sensitiveExactKeys = new Set([
-    "rawtext", "typedtext", "inputvalue", "userinput", "searchtext", "clipboardtext", "password", "passphrase", "email", "phone"
-  ]);
+  const safeExactKeys = new Set(["storesrawtext", "storesgeolocation", "typedtextredacted", "usertypedcontentstored"]);
+  if (safeExactKeys.has(normalisedKey)) return false;
+  const sensitiveExactKeys = new Set(["rawtext", "typedtext", "inputvalue", "userinput", "searchtext", "clipboardtext", "password", "passphrase", "email", "phone"]);
   const sensitiveSubstrings = ["rawtext", "typedtext", "inputvalue", "searchtext", "clipboardtext", "password", "passphrase", "email"];
   return sensitiveExactKeys.has(normalisedKey) || sensitiveSubstrings.some((blocked) => normalisedKey.includes(blocked));
 }
@@ -204,8 +212,7 @@ function activeAreaFromScreen(screenId) {
 }
 
 function logEvent(kind, payload = {}) {
-  if (!session) return;
-  if (loggingClosed) return;
+  if (!session || loggingClosed) return;
   const clean = sanitisePayload(payload);
   const rel = tRelMs();
   const timestampIso = nowIso();
@@ -253,6 +260,19 @@ function classifyKey(key) {
   return "OTHER";
 }
 
+function classifyCode(code) {
+  if (!code) return null;
+  if (/^Key[A-Z]$/.test(code)) return "KEY_LETTER";
+  if (/^Digit[0-9]$/.test(code) || /^Numpad[0-9]$/.test(code)) return "KEY_DIGIT";
+  if (code.includes("Space")) return "KEY_SPACE";
+  if (code.includes("Enter")) return "KEY_ENTER";
+  if (code.includes("Backspace")) return "KEY_BACKSPACE";
+  return "KEY_OTHER";
+}
+
+function componentIdOf(el) { return el?.closest?.("[data-component-id]")?.dataset?.componentId || el?.dataset?.componentId || el?.id || null; }
+function roundMaybe(value, digits = 4) { return typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(digits)) : null; }
+
 function attachPrivacySafeInputLogging(root = document) {
   root.querySelectorAll("input, textarea").forEach((el) => {
     if (el.dataset.loggerAttached === "true") return;
@@ -269,22 +289,9 @@ function attachPrivacySafeInputLogging(root = document) {
       previousLength = currentLength;
     });
     el.addEventListener("select", () => logEvent("select", { componentId: componentIdOf(el), valueLength: el.value.length, selectionStart: el.selectionStart ?? null, selectionEnd: el.selectionEnd ?? null }));
-    ["copy", "cut", "paste"].forEach((kind) => el.addEventListener(kind, (e) => logEvent(kind, { componentId: componentIdOf(el), valueLength: el.value.length, clipboardTextLength: e.clipboardData?.getData?.("text")?.length || 0 })));
+    ["copy", "cut", "paste"].forEach((kind) => el.addEventListener(kind, () => logEvent(kind, { componentId: componentIdOf(el), valueLength: el.value.length })));
   });
 }
-
-function classifyCode(code) {
-  if (!code) return null;
-  if (/^Key[A-Z]$/.test(code)) return "KEY_LETTER";
-  if (/^Digit[0-9]$/.test(code) || /^Numpad[0-9]$/.test(code)) return "KEY_DIGIT";
-  if (code.includes("Space")) return "KEY_SPACE";
-  if (code.includes("Enter")) return "KEY_ENTER";
-  if (code.includes("Backspace")) return "KEY_BACKSPACE";
-  return "KEY_OTHER";
-}
-
-function componentIdOf(el) { return el?.closest?.("[data-component-id]")?.dataset?.componentId || el?.dataset?.componentId || el?.id || null; }
-function roundMaybe(value, digits = 4) { return typeof value === "number" && Number.isFinite(value) ? Number(value.toFixed(digits)) : null; }
 
 function pointerPayload(e, target = null) {
   const el = target?.closest?.("[data-component-id]") || target;
@@ -306,7 +313,7 @@ function attachPointerLogging() {
   document.addEventListener("pointermove", (e) => { const now = performance.now(); if (now - lastPointerMoveLog < 16) return; lastPointerMoveLog = now; logEvent("pointermove", pointerPayload(e, e.target)); }, { passive: true });
   document.addEventListener("pointerup", (e) => logEvent("pointerup", pointerPayload(e, e.target)), { passive: true });
   document.addEventListener("pointercancel", (e) => logEvent("pointercancel", { ...pointerPayload(e, e.target), treatedAsPointerEnd: true }), { passive: true });
-  if ("onpointerrawupdate" in window) document.addEventListener("pointerrawupdate", (e) => logEvent("pointerrawupdate", pointerPayload(e, e.target)), { passive: true });
+  if ("onpointerrawupdate" in window) document.addEventListener("pointerrawupdate", (e) => { const now = performance.now(); if (now - lastPointerMoveLog < 16) return; lastPointerMoveLog = now; logEvent("pointerrawupdate", pointerPayload(e, e.target)); }, { passive: true });
   ["touchstart", "touchmove", "touchend", "touchcancel"].forEach((kind) => document.addEventListener(kind, (e) => { if (kind === "touchmove") { const now = performance.now(); if (now - lastTouchMoveLog < 16) return; lastTouchMoveLog = now; } logEvent(kind, touchPayload(e, e.target)); }, { passive: true }));
 }
 
@@ -323,21 +330,7 @@ function attachScrollableLogging(root = document) {
       const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
       const scrollTopRatioRaw = maxTop ? el.scrollTop / maxTop : 0;
       const scrollLeftRatioRaw = maxLeft ? el.scrollLeft / maxLeft : 0;
-      logEvent("scroll", {
-        componentId: componentIdOf(el),
-        scrollTop: roundMaybe(el.scrollTop, 2),
-        scrollLeft: roundMaybe(el.scrollLeft, 2),
-        scrollTopMaxPossible: roundMaybe(maxTop, 2),
-        scrollLeftMaxPossible: roundMaybe(maxLeft, 2),
-        scrollTopRatioRaw: roundMaybe(scrollTopRatioRaw, 5),
-        scrollLeftRatioRaw: roundMaybe(scrollLeftRatioRaw, 5),
-        scrollTopRatio: maxTop ? roundMaybe(clamp01(scrollTopRatioRaw), 5) : 0,
-        scrollLeftRatio: maxLeft ? roundMaybe(clamp01(scrollLeftRatioRaw), 5) : 0,
-        scrollHeight: roundMaybe(el.scrollHeight, 2),
-        scrollWidth: roundMaybe(el.scrollWidth, 2),
-        clientHeight: roundMaybe(el.clientHeight, 2),
-        clientWidth: roundMaybe(el.clientWidth, 2)
-      });
+      logEvent("scroll", { componentId: componentIdOf(el), scrollTop: roundMaybe(el.scrollTop, 2), scrollLeft: roundMaybe(el.scrollLeft, 2), scrollTopMaxPossible: roundMaybe(maxTop, 2), scrollLeftMaxPossible: roundMaybe(maxLeft, 2), scrollTopRatioRaw: roundMaybe(scrollTopRatioRaw, 5), scrollLeftRatioRaw: roundMaybe(scrollLeftRatioRaw, 5), scrollTopRatio: maxTop ? roundMaybe(clamp01(scrollTopRatioRaw), 5) : 0, scrollLeftRatio: maxLeft ? roundMaybe(clamp01(scrollLeftRatioRaw), 5) : 0, scrollHeight: roundMaybe(el.scrollHeight, 2), scrollWidth: roundMaybe(el.scrollWidth, 2), clientHeight: roundMaybe(el.clientHeight, 2), clientWidth: roundMaybe(el.clientWidth, 2) });
     }, { passive: true });
   });
 }
@@ -410,22 +403,7 @@ function buildQualitySummary() {
   if (!has("devicemotion")) warnings.push("missing_motion_events");
   if (!has("deviceorientation")) warnings.push("missing_orientation_events");
 
-  return {
-    completedTaskCount: session.taskSummary.length,
-    expectedTaskCount: expectedTaskIds.length || null,
-    expectedTaskIds,
-    completedTaskIds,
-    missingTaskIds,
-    eventCount: events.length,
-    hasMotion: has("devicemotion"),
-    hasOrientation: has("deviceorientation"),
-    hasTyping: has("input"),
-    hasScroll: has("scroll"),
-    hasCardSwipeSummary: has("card_swipe_summary"),
-    hasApprovalSwipe: has("approval_swipe_release"),
-    warnings,
-    usableForSignalExtraction: warnings.filter((warning) => warning !== "missing_motion_events" && warning !== "missing_orientation_events").length === 0
-  };
+  return { completedTaskCount: session.taskSummary.length, expectedTaskCount: expectedTaskIds.length || null, expectedTaskIds, completedTaskIds, missingTaskIds, eventCount: events.length, hasMotion: has("devicemotion"), hasOrientation: has("deviceorientation"), hasTyping: has("input"), hasScroll: has("scroll"), hasCardSwipeSummary: has("card_swipe_summary"), hasApprovalSwipe: has("approval_swipe_release"), warnings, usableForSignalExtraction: warnings.filter((warning) => warning !== "missing_motion_events" && warning !== "missing_orientation_events").length === 0 };
 }
 
 function completeSession() {
