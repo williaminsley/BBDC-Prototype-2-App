@@ -37,5 +37,40 @@
   </script>
   <script type="module" src="firebase.js"></script>
   <script src="app.js"></script>
+  <script>
+    Object.assign(DEVICE_MODEL_OPTIONS, {
+      iphone: ["iPhone 17 standard", "iPhone 17 Plus / large", "iPhone 17 Pro", "iPhone 17 Pro Max", "iPhone 16 standard", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 15 standard", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max", "iPhone 14 standard", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max", "iPhone 13 mini", "iPhone 13 standard", "iPhone 13 Pro", "iPhone 13 Pro Max", "iPhone SE", "Older iPhone", "Other iPhone / not sure"],
+      android: ["Samsung Galaxy S standard", "Samsung Galaxy S Plus", "Samsung Galaxy S Ultra", "Samsung Galaxy A series", "Google Pixel standard", "Google Pixel Pro", "OnePlus", "Xiaomi / Redmi / POCO", "Other Android / not sure"],
+      tablet: ["iPad mini", "iPad standard", "iPad Air", "iPad Pro 11 inch", "iPad Pro 12.9 / 13 inch", "Samsung Galaxy Tab", "Other tablet / not sure"]
+    });
+    const baseCollectContextAnswers = collectContextAnswers;
+    collectContextAnswers = function () {
+      const context = baseCollectContextAnswers();
+      context.consentVersion = typeof CONSENT_VERSION !== "undefined" ? CONSENT_VERSION : "p2_consent_2026_06_30";
+      context.consentAccepted = true;
+      context.browserRequirementAccepted = true;
+      return context;
+    };
+    renderIntro = function () {
+      resetScreenListeners();
+      state.identity = ensureIdentity();
+      window.currentScreenId = "intro";
+      app.innerHTML = `<section class="intro-screen compact-intro"><h1>Behavioural Biometrics Study</h1><p class="lead">Complete one guided demo banking review of up to <strong>26 steps</strong>. It usually takes around <strong>3–6 minutes</strong>.</p><article class="info-card"><h2>What you will do</h2><p>Use a fake banking interface to check demo accounts, search fake transactions, scroll lists, drag a savings-pot slider, swipe an approval control and copy short prompted text.</p></article><article class="info-card"><h2>What is collected</h2><p>Behavioural metadata such as tap timing, touch/pointer movement, scroll behaviour, typing rhythm, drag/swipe movement, optional motion/orientation, context answers and device/browser information.</p></article><article class="info-card"><h2>Privacy</h2><p>Do not enter real banking details or personal information. Raw typed content is not stored; only timing, length, correction and interaction metadata are recorded.</p></article><button id="introNext" class="primary-btn" type="button">Continue to Consent</button></section>`;
+      addScreenListener(document.getElementById("introNext"), "click", renderConsent);
+    };
+    renderConsent = function () {
+      resetScreenListeners();
+      window.currentScreenId = "consent";
+      app.innerHTML = `<section class="intro-screen compact-intro"><h1>Consent</h1><p class="lead">This study collects pseudonymised behavioural, contextual and device interaction data from a fake banking interface for academic research into behavioural biometrics and continuous authentication.</p><article class="info-card"><h2>What will be collected</h2><p><strong>Typing metadata:</strong> key timing, input length and corrections. Raw typed content is not stored.</p><p><strong>Interaction metadata:</strong> touch, pointer, scroll, drag, swipe and task events.</p><p><strong>Device/context metadata:</strong> motion/orientation where available, time of day, fatigue, focus, posture, hand use, movement, environment, device model, browser, screen size, Participant ID, session ID and timing.</p></article><article class="info-card"><h2>What is not collected</h2><p>The app does not ask for real banking details, passwords, names, email addresses, phone numbers or addresses. Geolocation is not collected. Data is pseudonymised rather than fully anonymous.</p></article><article class="info-card"><h2>Use and withdrawal</h2><p>Data may be processed into derived research datasets and statistical features for modelling and dissertation reporting. Participation is voluntary; you can stop before finishing by closing the page.</p><p>To withdraw uploaded data, contact the study lead with the <strong>Participant ID</strong> shown on the completion screen. <strong>18+ only.</strong></p></article><label class="check-row"><input id="consentAge" type="checkbox" /><span>I am 18 or over, I understand what data may be collected, and I agree to take part.</span></label><label class="check-row"><input id="consentBrowser" type="checkbox" /><span>I am using a normal Safari or Chrome tab, not private/incognito mode.</span></label><button id="consentNext" class="primary-btn" type="button" disabled>Continue</button></section>`;
+      const age = document.getElementById("consentAge");
+      const browser = document.getElementById("consentBrowser");
+      const next = document.getElementById("consentNext");
+      const update = () => { next.disabled = !(age.checked && browser.checked); };
+      addScreenListener(age, "change", update);
+      addScreenListener(browser, "change", update);
+      addScreenListener(next, "click", renderContext);
+    };
+    renderIntro();
+  </script>
 </body>
 </html>
