@@ -41,34 +41,58 @@ function safeSetLocalStorage(key, value) {
   try { localStorage.setItem(key, value); } catch (_) { /* ignore */ }
 }
 
-// P2 identity: anonymous uid -> participants_p2/{uid}.participantId, mirrored to P2 localStorage.
-async function ensureIdentity() {
-  await signInAnonymously(auth);
-  const uid = auth.currentUser.uid;
-  const refUser = doc(db, PARTICIPANT_COLLECTION, uid);
-  const snap = await getDoc(refUser);
+async function ensureSignedIn() {
+  if (!auth.currentUser) await signInAnonymously(auth);
+  return auth.currentUser.uid;
+}
 
-  let participantId;
-  if (snap.exists() && snap.data().participantId) {
-    participantId = snap.data().participantId;
-  } else {
-    participantId = safeGetLocalStorage(PARTICIPANT_ID_KEY) || safeGetLocalStorage(LEGACY_PARTICIPANT_ID_KEY) || makeParticipantId();
-    await setDoc(refUser, { participantId, prototype: "p2", participantStorageKey: PARTICIPANT_ID_KEY, createdAt: serverTimestamp() }, { merge: true });
+// P2 identity: anonymous uid -> participants_p2/{uid}.participantId, mirrored to P2 localStorage.
+// The session participantId is treated as the source of truth when an upload has already been created by logger.js.
+async function ensureIdentity(preferredParticipantId = null) {
+  const uid = await ensureSignedIn();
+  const refUser = doc(db, PARTICIPANT_COLLECTION, uid);
+  const storedParticipantId = safeGetLocalStorage(PARTICIPANT_ID_KEY) || safeGetLocalStorage(LEGACY_PARTICIPANT_ID_KEY);
+  let participantId = preferredParticipantId || storedParticipantId || makeParticipantId();
+
+  try {
+    const snap = await getDoc(refUser);
+    if (!preferredParticipantId && snap.exists() && snap.data().participantId) {
+      participantId = snap.data().participantId;
+    }
+  } catch (err) {
+    console.warn("Participant lookup unavailable; continuing with local participantId", err);
   }
+
   safeSetLocalStorage(PARTICIPANT_ID_KEY, participantId);
-  return { uid, participantId };
+
+  try {
+    await setDoc(refUser, {
+      participantId,
+      prototype: "p2",
+      participantStorageKey: PARTICIPANT_ID_KEY,
+      lastSeenAt: serverTimestamp(),
+      createdAt: serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Participant document write unavailable; session upload can still continue", err);
+  }
+
+  return { uid, participantId, participantCollection: PARTICIPANT_COLLECTION };
 }
 
 // Upload: raw session JSON -> Storage, plus a metadata doc -> Firestore.
 async function uploadSessionToFirebase(session) {
-  if (!auth.currentUser) await signInAnonymously(auth);
   const sid = session && session.sessionId;
   if (!sid) throw new Error("Missing sessionId");
+
+  const identity = await ensureIdentity(session.participantId || null);
+  if (!session.participantId) session.participantId = identity.participantId;
 
   session.uploadAttemptedAtIso ||= new Date().toISOString();
   session.uploadMethod ||= "firebase_storage_firestore";
   session.uploadStatus ||= "attempting";
-  session.firebaseUid = auth.currentUser.uid;
+  session.firebaseUid = identity.uid;
+  session.participantCollection = PARTICIPANT_COLLECTION;
 
   const blob = new Blob([JSON.stringify(session)], { type: "application/json;charset=utf-8" });
   const storagePath = `sessions_p2/${sid}/session.json`;
@@ -77,8 +101,10 @@ async function uploadSessionToFirebase(session) {
 
   await addDoc(collection(db, SESSION_COLLECTION), {
     sessionId: sid,
-    uid: auth.currentUser.uid,
+    uid: identity.uid,
     participantId: session.participantId ?? null,
+    participantCollection: PARTICIPANT_COLLECTION,
+    participantDocPath: `${PARTICIPANT_COLLECTION}/${identity.uid}`,
     sessionIndex: session.sessionIndex ?? null,
     schemaVersion: session.schemaVersion ?? null,
     appVersion: session.appVersion ?? null,
@@ -100,7 +126,7 @@ async function uploadSessionToFirebase(session) {
   session.uploadStatus = "success";
   session.firebaseStoragePath = storagePath;
 
-  return { uid: auth.currentUser.uid, sessionId: sid, storagePath };
+  return { uid: identity.uid, participantId: session.participantId, sessionId: sid, storagePath };
 }
 
 window.bbdcFirebase = { ensureIdentity, uploadSessionToFirebase };
