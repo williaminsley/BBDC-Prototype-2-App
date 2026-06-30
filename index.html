@@ -12,6 +12,29 @@
   <script src="schema.js"></script>
   <script src="tasks.js"></script>
   <script src="logger.js"></script>
+  <script>
+    const P2_PID_KEY = "bbdc_p2_participantId";
+    const P2_SESSION_KEY = "bbdc_p2_sessionCount";
+    ensureIdentity = function () {
+      const p2 = safeGetLocalStorage(P2_PID_KEY);
+      const legacy = safeGetLocalStorage("participantId");
+      const participantId = p2 || legacy || memoryParticipantId || makeParticipantId();
+      memoryParticipantId = participantId;
+      safeSetLocalStorage(P2_PID_KEY, participantId);
+      return { uid: null, participantId, identitySource: p2 ? "localStorage_p2_returning" : (legacy ? "localStorage_legacy_migrated_to_p2" : "fresh_minted") };
+    };
+    getNextSessionIndex = function () {
+      const count = Math.max(Number(safeGetLocalStorage(P2_SESSION_KEY) || 0), memorySessionCount) + 1;
+      memorySessionCount = count;
+      safeSetLocalStorage(P2_SESSION_KEY, String(count));
+      return count;
+    };
+    shouldRedactKey = function (key) {
+      const k = String(key || "").toLowerCase();
+      if (["storesrawtext", "storesgeolocation", "typedtextredacted", "usertypedcontentstored"].includes(k)) return false;
+      return ["rawtext", "typedtext", "inputvalue", "userinput", "searchtext", "clipboardtext", "password", "passphrase", "email", "phone"].includes(k) || ["rawtext", "typedtext", "inputvalue", "searchtext", "clipboardtext", "password", "passphrase", "email"].some((x) => k.includes(x));
+    };
+  </script>
   <script type="module" src="firebase.js"></script>
   <script src="app.js"></script>
 </body>
