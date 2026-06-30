@@ -315,6 +315,12 @@ async function startReview() {
     window.GUIDED_TASKS = state.tasks.map((task) => ({ ...task }));
     window.currentActiveArea = state.activeArea;
 
+    try {
+      if (window.bbdcFirebase) await window.bbdcFirebase.ensureIdentity();
+    } catch (e) {
+      console.warn("Firebase identity unavailable; using local identity", e);
+    }
+
     createSession(state.context, publicGeneratedContent());
 
     let permissionResult = "not_requested";
@@ -1951,7 +1957,7 @@ function renderCompletion() {
     <section class="intro-screen completion-screen">
       <div class="success-orb">OK</div>
       <h1>Review complete</h1>
-      <p class="lead">Thanks - this ${state.tasks.length}-task session is ready for development review.</p>
+      <p class="lead">Thanks — your ${state.tasks.length}-task session is complete.</p>
       <div class="summary-card">
         <div><span>Participant ID</span><strong>${escapeHtml(session.participantId)}</strong></div>
         <div><span>Session</span><strong>${escapeHtml(String(session.sessionIndex))}</strong></div>
@@ -1959,12 +1965,42 @@ function renderCompletion() {
         <div><span>Events</span><strong>${session.events.length}</strong></div>
       </div>
       <button class="primary-btn" type="button" id="downloadJsonBtn">Download JSON</button>
-      ${APP_MODE !== "debug" ? `<p class="muted">Upload is not enabled in this build. Download the JSON and submit it using the study instructions.</p>` : ""}
+      <p class="muted">If the upload doesn't finish, tap Download JSON and submit it using the study instructions.</p>
       <button class="secondary-btn" type="button" id="startAnotherBtn">Start another session</button>
     </section>`;
 
   addScreenListener(document.getElementById("downloadJsonBtn"), "click", downloadSessionJson);
   addScreenListener(document.getElementById("startAnotherBtn"), "click", renderContext);
+
+  // P1-style auto-upload with Share/Download fallback (self-contained)
+  (function attemptUpload() {
+    const s = (typeof getSession === "function") ? getSession() : null;
+    if (!s || !s.sessionId) return;
+    if (window.__bbdcUploadedSessionId === s.sessionId) return; // don't double-fire
+
+    let statusEl = document.getElementById("uploadStatus");
+    if (!statusEl) {
+      statusEl = document.createElement("p");
+      statusEl.id = "uploadStatus";
+      statusEl.className = "muted";
+      (document.getElementById("app") || document.body).appendChild(statusEl);
+    }
+
+    if (!window.bbdcFirebase) {
+      statusEl.textContent = "Saved on device. Tap Save / Share to submit your data.";
+      return;
+    }
+
+    window.__bbdcUploadedSessionId = s.sessionId;
+    statusEl.textContent = "Uploading…";
+    window.bbdcFirebase.uploadSessionToFirebase(s)
+      .then(() => { statusEl.textContent = "Uploaded. Thank you."; })
+      .catch((e) => {
+        console.error("UPLOAD_ERROR", e);
+        window.__bbdcUploadedSessionId = null; // allow retry via Save/Share
+        statusEl.textContent = "Upload failed — please tap Save / Share to submit your data.";
+      });
+  })();
 }
 
 function showWarning(message) {
