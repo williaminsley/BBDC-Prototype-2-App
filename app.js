@@ -269,6 +269,8 @@ function renderContext() {
         ${renderSelectField("movement", "Movement", ["None", "Slight movement", "Walking / moving", "Public transport / vehicle", "Other"])}
         ${renderSelectField("environmentNoise", "Environment noise", ["Quiet", "Normal", "Noisy", "Very noisy"])}
         ${renderSelectField("privacy", "Privacy of setting", ["Private", "Shared room", "Public place", "Other people nearby"])}
+        ${renderSelectField("alcohol", "Alcohol", ["None", "Low", "Medium", "High"])}
+        ${renderSelectField("caffeine", "Caffeine", ["None", "Low", "Medium", "High"])}
       </article>
       ${renderSegmentGroup("posture", "Posture", ["Sitting", "Standing", "Walking / moving"])}
       ${renderSegmentGroup("handUse", "Hand use", ["Two-handed", "One-handed right", "One-handed left"])}
