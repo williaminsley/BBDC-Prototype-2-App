@@ -5,5 +5,5 @@ firebase-config.js
 data/
 sessions/
 exports/
-*.json
+#*.json
 *.csv
